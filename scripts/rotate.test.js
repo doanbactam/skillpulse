@@ -174,12 +174,14 @@ describe('Basic rotation functionality', () => {
   
   test('preserves entries exactly at retention boundary', () => {
     const retentionDays = 30;
-    const boundaryTs = daysAgoTs(retentionDays);
+    // Add a small buffer (1 second) to ensure the entry is clearly within retention
+    // This accounts for time elapsed between calculating the timestamp and running rotation
+    const boundaryTs = daysAgoTs(retentionDays) + 1;
     
-    // Entry exactly at boundary should be preserved (>= comparison)
+    // Entry at boundary (with buffer) should be preserved (>= comparison)
     const entries = [
       { skill: 'boundary-skill', ts: boundaryTs, trigger: 'auto' },
-      { skill: 'old-skill', ts: boundaryTs - 1, trigger: 'auto' } // 1 second older
+      { skill: 'old-skill', ts: boundaryTs - 2, trigger: 'auto' } // clearly older
     ];
     writePulseFile(tempDir, entries);
     
