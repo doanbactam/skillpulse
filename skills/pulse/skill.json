@@ -1,0 +1,12 @@
+{
+  "name": "skill-stats",
+  "version": "1.0.0",
+  "description": "Analyze skill usage patterns to show which skills you actually use, which are effective, and which should be removed.",
+  "author": "Your Name",
+  "homepage": "https://github.com/doanbactam/skill-stats",
+  "license": "MIT",
+  "tags": ["analytics", "productivity", "skills", "cli"],
+  "categories": ["Developer Tools", "Productivity"],
+  "works_with": ["claude-code"],
+  "analytic": true
+}
