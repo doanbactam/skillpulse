@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/scripts/track.sh"
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/track.js\""
           }
         ]
       }
