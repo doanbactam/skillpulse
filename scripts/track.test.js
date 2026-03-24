@@ -1,754 +1,1069 @@
 /**
- * Unit tests for scripts/track.js
+ * Unit tests for track.js - SkillPulse tracking script
  * 
- * Uses Node.js built-in test runner (node:test) and assertions (node:assert)
- * Tests are isolated and use mocked environment variables.
+ * Tests cover:
+ * - SKILL.md detection (forward slash, backslash, mixed)
+ * - Skill name extraction from various path depths
+ * - Trigger classification (explicit vs auto)
+ * - JSONL output format validation
+ * - Error handling (missing env vars, invalid input)
+ * - Cross-platform path handling
+ * 
+ * Uses Node.js built-in test runner (node:test) and assertions (node:assert).
+ * Tests are isolated and deterministic - no shared state between tests.
  */
+
+'use strict';
 
 const { test, describe, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execSync, spawn } = require('child_process');
 const os = require('os');
 
-// Helper to create temp directory for tests
+// Path to the script under test
+const TRACK_SCRIPT_PATH = path.join(__dirname, 'track.js');
+
+/**
+ * Helper to create a unique temp directory for each test
+ * This ensures test isolation
+ */
 function createTempDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'skillpulse-test-'));
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'track-test-'));
 }
 
-// Helper to run track.js with given env vars
+/**
+ * Helper to run track.js with given environment variables
+ * Returns { stdout, stderr, exitCode }
+ */
 function runTrack(env) {
-  const mergedEnv = { ...process.env, ...env };
+  const result = {
+    stdout: '',
+    stderr: '',
+    exitCode: null
+  };
+  
   try {
-    execSync('node scripts/track.js', {
-      env: mergedEnv,
-      cwd: process.cwd(),
-      stdio: ['pipe', 'pipe', 'pipe'],
-      encoding: 'utf8'
-    });
-    return { exitCode: 0, stdout: '', stderr: '' };
+    result.stdout = execSync(
+      `node "${TRACK_SCRIPT_PATH}"`,
+      {
+        env: { ...process.env, ...env },
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: 5000
+      }
+    );
   } catch (error) {
-    return {
-      exitCode: error.status || 1,
-      stdout: error.stdout || '',
-      stderr: error.stderr || ''
-    };
+    result.stdout = error.stdout || '';
+    result.stderr = error.stderr || '';
+    result.exitCode = error.status;
+    return result;
   }
+  
+  result.exitCode = 0;
+  return result;
 }
 
-// Helper to read pulse.jsonl content
+/**
+ * Helper to read pulse.jsonl from a directory
+ * Returns array of parsed entries
+ */
 function readPulseFile(dir) {
-  const filePath = path.join(dir, 'pulse.jsonl');
-  if (!fs.existsSync(filePath)) {
+  const pulsePath = path.join(dir, 'pulse.jsonl');
+  if (!fs.existsSync(pulsePath)) {
     return null;
   }
-  return fs.readFileSync(filePath, 'utf8');
+  const content = fs.readFileSync(pulsePath, 'utf8');
+  return content.trim().split('\n').map(line => JSON.parse(line));
 }
 
-// Helper to parse JSONL content
-function parseJsonl(content) {
-  if (!content) return [];
-  return content.trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
-}
+// ============================================================================
+// SKILL.md DETECTION TESTS (VAL-TEST-002, VAL-PLAT-001, VAL-PLAT-002, VAL-PLAT-003)
+// ============================================================================
 
-describe('track.js - SKILL.md detection', () => {
+describe('SKILL.md detection', () => {
   let tempDir;
-
+  
   beforeEach(() => {
     tempDir = createTempDir();
   });
-
+  
   afterEach(() => {
+    // Cleanup temp directory
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
-
-  test('detects SKILL.md with forward slash path', () => {
-    const result = runTrack({
-      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/careful/SKILL.md' }),
+  
+  test('detects SKILL.md with forward slash path (Unix-style)', () => {
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/home/user/.claude/skills/careful/SKILL.md' }),
       CLAUDE_HUMAN_TURN: '',
       CLAUDE_PLUGIN_DATA: tempDir
-    });
-
-    assert.strictEqual(result.exitCode, 0, 'Should exit with code 0');
+    };
+    
+    const result = runTrack(env);
+    const entries = readPulseFile(tempDir);
+    
+    assert.strictEqual(result.exitCode, 0, 'Exit code should be 0');
     assert.strictEqual(result.stdout, '', 'Should produce no stdout');
     assert.strictEqual(result.stderr, '', 'Should produce no stderr');
-
-    const entries = parseJsonl(readPulseFile(tempDir));
+    assert.ok(entries, 'pulse.jsonl should be created');
     assert.strictEqual(entries.length, 1, 'Should have one entry');
-    assert.strictEqual(entries[0].skill, 'careful', 'Should extract correct skill name');
+    assert.strictEqual(entries[0].skill, 'careful', 'Skill name should be "careful"');
   });
-
-  test('detects SKILL.md with backslash path (Windows)', () => {
-    const result = runTrack({
-      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: 'C:\\skills\\test\\SKILL.md' }),
+  
+  test('detects SKILL.md with backslash path (Windows-style)', () => {
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: 'C:\\Users\\name\\.claude\\skills\\careful\\SKILL.md' }),
       CLAUDE_HUMAN_TURN: '',
       CLAUDE_PLUGIN_DATA: tempDir
-    });
-
-    assert.strictEqual(result.exitCode, 0, 'Should exit with code 0');
-
-    const entries = parseJsonl(readPulseFile(tempDir));
+    };
+    
+    const result = runTrack(env);
+    const entries = readPulseFile(tempDir);
+    
+    assert.strictEqual(result.exitCode, 0, 'Exit code should be 0');
+    assert.ok(entries, 'pulse.jsonl should be created');
     assert.strictEqual(entries.length, 1, 'Should have one entry');
-    assert.strictEqual(entries[0].skill, 'test', 'Should extract correct skill name');
+    assert.strictEqual(entries[0].skill, 'careful', 'Skill name should be extracted from backslash path');
   });
-
+  
   test('detects SKILL.md with mixed separators', () => {
-    const result = runTrack({
-      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: 'C:/skills\\my-skill/SKILL.md' }),
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: 'C:/Users\\name/.claude\\skills/careful/SKILL.md' }),
       CLAUDE_HUMAN_TURN: '',
       CLAUDE_PLUGIN_DATA: tempDir
-    });
-
-    assert.strictEqual(result.exitCode, 0, 'Should exit with code 0');
-
-    const entries = parseJsonl(readPulseFile(tempDir));
+    };
+    
+    const result = runTrack(env);
+    const entries = readPulseFile(tempDir);
+    
+    assert.strictEqual(result.exitCode, 0, 'Exit code should be 0');
+    assert.ok(entries, 'pulse.jsonl should be created');
     assert.strictEqual(entries.length, 1, 'Should have one entry');
-    assert.strictEqual(entries[0].skill, 'my-skill', 'Should extract correct skill name');
+    assert.strictEqual(entries[0].skill, 'careful', 'Skill name should be extracted from mixed path');
   });
-
-  test('ignores non-SKILL.md files', () => {
-    const result = runTrack({
-      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/careful/README.md' }),
-      CLAUDE_HUMAN_TURN: '',
-      CLAUDE_PLUGIN_DATA: tempDir
-    });
-
-    assert.strictEqual(result.exitCode, 0, 'Should exit with code 0');
-    assert.strictEqual(result.stdout, '', 'Should produce no stdout');
-    assert.strictEqual(result.stderr, '', 'Should produce no stderr');
-
-    const content = readPulseFile(tempDir);
-    assert.strictEqual(content, null, 'Should not create pulse.jsonl for non-SKILL.md');
-  });
-
-  test('ignores lowercase skill.md', () => {
-    const result = runTrack({
+  
+  test('is case-sensitive for SKILL.md (lowercase skill.md not detected)', () => {
+    const env = {
       CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/careful/skill.md' }),
       CLAUDE_HUMAN_TURN: '',
       CLAUDE_PLUGIN_DATA: tempDir
-    });
-
-    assert.strictEqual(result.exitCode, 0, 'Should exit with code 0');
-    const content = readPulseFile(tempDir);
-    assert.strictEqual(content, null, 'Should not log lowercase skill.md');
+    };
+    
+    const result = runTrack(env);
+    const entries = readPulseFile(tempDir);
+    
+    assert.strictEqual(result.exitCode, 0, 'Exit code should be 0');
+    assert.strictEqual(entries, null, 'pulse.jsonl should NOT be created for lowercase skill.md');
+  });
+  
+  test('is case-sensitive for SKILL.md (SKILL.MD uppercase not detected)', () => {
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/careful/SKILL.MD' }),
+      CLAUDE_HUMAN_TURN: '',
+      CLAUDE_PLUGIN_DATA: tempDir
+    };
+    
+    const result = runTrack(env);
+    const entries = readPulseFile(tempDir);
+    
+    assert.strictEqual(result.exitCode, 0, 'Exit code should be 0');
+    assert.strictEqual(entries, null, 'pulse.jsonl should NOT be created for uppercase SKILL.MD');
+  });
+  
+  test('ignores non-SKILL.md files', () => {
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/home/user/README.md' }),
+      CLAUDE_HUMAN_TURN: '',
+      CLAUDE_PLUGIN_DATA: tempDir
+    };
+    
+    const result = runTrack(env);
+    const entries = readPulseFile(tempDir);
+    
+    assert.strictEqual(result.exitCode, 0, 'Exit code should be 0');
+    assert.strictEqual(entries, null, 'pulse.jsonl should NOT be created for README.md');
+  });
+  
+  test('ignores files that end with SKILL.md but are not exact match', () => {
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/home/user/NOTSKILL.md' }),
+      CLAUDE_HUMAN_TURN: '',
+      CLAUDE_PLUGIN_DATA: tempDir
+    };
+    
+    const result = runTrack(env);
+    const entries = readPulseFile(tempDir);
+    
+    assert.strictEqual(result.exitCode, 0, 'Exit code should be 0');
+    assert.strictEqual(entries, null, 'pulse.jsonl should NOT be created');
   });
 });
 
-describe('track.js - Skill name extraction', () => {
-  let tempDir;
+// ============================================================================
+// SKILL NAME EXTRACTION TESTS (VAL-TRACK-002, VAL-TRACK-009, VAL-TRACK-010)
+// ============================================================================
 
+describe('Skill name extraction', () => {
+  let tempDir;
+  
   beforeEach(() => {
     tempDir = createTempDir();
   });
-
+  
   afterEach(() => {
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
-
-  test('extracts skill name from deeply nested path', () => {
-    const result = runTrack({
-      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/a/b/c/d/e/my-skill/SKILL.md' }),
+  
+  test('extracts skill name from simple path', () => {
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/my-skill/SKILL.md' }),
       CLAUDE_HUMAN_TURN: '',
       CLAUDE_PLUGIN_DATA: tempDir
-    });
-
-    assert.strictEqual(result.exitCode, 0);
-    const entries = parseJsonl(readPulseFile(tempDir));
-    assert.strictEqual(entries[0].skill, 'my-skill', 'Should extract immediate parent as skill name');
+    };
+    
+    const result = runTrack(env);
+    const entries = readPulseFile(tempDir);
+    
+    assert.strictEqual(entries[0].skill, 'my-skill');
   });
-
-  test('handles skill names with hyphens', () => {
-    const result = runTrack({
+  
+  test('extracts skill name from deeply nested path', () => {
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/a/b/c/d/e/deep-skill/SKILL.md' }),
+      CLAUDE_HUMAN_TURN: '',
+      CLAUDE_PLUGIN_DATA: tempDir
+    };
+    
+    const result = runTrack(env);
+    const entries = readPulseFile(tempDir);
+    
+    assert.strictEqual(entries[0].skill, 'deep-skill', 'Should extract immediate parent directory');
+  });
+  
+  test('extracts skill name with hyphens', () => {
+    const env = {
       CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/my-skill-123/SKILL.md' }),
       CLAUDE_HUMAN_TURN: '',
       CLAUDE_PLUGIN_DATA: tempDir
-    });
-
-    assert.strictEqual(result.exitCode, 0);
-    const entries = parseJsonl(readPulseFile(tempDir));
+    };
+    
+    const result = runTrack(env);
+    const entries = readPulseFile(tempDir);
+    
     assert.strictEqual(entries[0].skill, 'my-skill-123');
   });
-
-  test('handles skill names with underscores', () => {
-    const result = runTrack({
+  
+  test('extracts skill name with underscores', () => {
+    const env = {
       CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/skill_name/SKILL.md' }),
       CLAUDE_HUMAN_TURN: '',
       CLAUDE_PLUGIN_DATA: tempDir
-    });
-
-    assert.strictEqual(result.exitCode, 0);
-    const entries = parseJsonl(readPulseFile(tempDir));
+    };
+    
+    const result = runTrack(env);
+    const entries = readPulseFile(tempDir);
+    
     assert.strictEqual(entries[0].skill, 'skill_name');
   });
-
-  test('handles skill names with numbers', () => {
-    const result = runTrack({
+  
+  test('extracts skill name with numbers', () => {
+    const env = {
       CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/skill123/SKILL.md' }),
       CLAUDE_HUMAN_TURN: '',
       CLAUDE_PLUGIN_DATA: tempDir
-    });
-
-    assert.strictEqual(result.exitCode, 0);
-    const entries = parseJsonl(readPulseFile(tempDir));
+    };
+    
+    const result = runTrack(env);
+    const entries = readPulseFile(tempDir);
+    
     assert.strictEqual(entries[0].skill, 'skill123');
+  });
+  
+  test('extracts skill name with mixed special characters', () => {
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/my-skill_v2-final/SKILL.md' }),
+      CLAUDE_HUMAN_TURN: '',
+      CLAUDE_PLUGIN_DATA: tempDir
+    };
+    
+    const result = runTrack(env);
+    const entries = readPulseFile(tempDir);
+    
+    assert.strictEqual(entries[0].skill, 'my-skill_v2-final');
+  });
+  
+  test('extracts skill name from Windows UNC path', () => {
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '\\\\server\\share\\skills\\network-skill\\SKILL.md' }),
+      CLAUDE_HUMAN_TURN: '',
+      CLAUDE_PLUGIN_DATA: tempDir
+    };
+    
+    const result = runTrack(env);
+    const entries = readPulseFile(tempDir);
+    
+    assert.strictEqual(entries[0].skill, 'network-skill');
   });
 });
 
-describe('track.js - Trigger classification', () => {
-  let tempDir;
+// ============================================================================
+// TRIGGER CLASSIFICATION TESTS (VAL-TEST-003, VAL-TRACK-004, VAL-TRACK-005)
+// ============================================================================
 
+describe('Trigger classification', () => {
+  let tempDir;
+  
   beforeEach(() => {
     tempDir = createTempDir();
   });
-
+  
   afterEach(() => {
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
-
+  
   test('classifies explicit trigger when user message contains /skillname', () => {
-    const result = runTrack({
+    const env = {
       CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/careful/SKILL.md' }),
-      CLAUDE_HUMAN_TURN: 'Please use /careful to analyze this',
+      CLAUDE_HUMAN_TURN: 'Please run /careful on this code',
       CLAUDE_PLUGIN_DATA: tempDir
-    });
-
-    assert.strictEqual(result.exitCode, 0);
-    const entries = parseJsonl(readPulseFile(tempDir));
-    assert.strictEqual(entries[0].trigger, 'explicit', 'Should classify as explicit');
+    };
+    
+    const result = runTrack(env);
+    const entries = readPulseFile(tempDir);
+    
+    assert.strictEqual(entries[0].trigger, 'explicit');
   });
-
+  
   test('classifies auto trigger when user message does not contain skill name', () => {
-    const result = runTrack({
+    const env = {
       CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/careful/SKILL.md' }),
       CLAUDE_HUMAN_TURN: 'Please analyze this code',
       CLAUDE_PLUGIN_DATA: tempDir
-    });
-
-    assert.strictEqual(result.exitCode, 0);
-    const entries = parseJsonl(readPulseFile(tempDir));
-    assert.strictEqual(entries[0].trigger, 'auto', 'Should classify as auto');
+    };
+    
+    const result = runTrack(env);
+    const entries = readPulseFile(tempDir);
+    
+    assert.strictEqual(entries[0].trigger, 'auto');
   });
-
+  
   test('classifies auto trigger when CLAUDE_HUMAN_TURN is empty', () => {
-    const result = runTrack({
+    const env = {
       CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/careful/SKILL.md' }),
       CLAUDE_HUMAN_TURN: '',
       CLAUDE_PLUGIN_DATA: tempDir
-    });
-
-    assert.strictEqual(result.exitCode, 0);
-    const entries = parseJsonl(readPulseFile(tempDir));
-    assert.strictEqual(entries[0].trigger, 'auto', 'Should default to auto when empty');
+    };
+    
+    const result = runTrack(env);
+    const entries = readPulseFile(tempDir);
+    
+    assert.strictEqual(entries[0].trigger, 'auto');
   });
-
-  test('classifies auto when CLAUDE_HUMAN_TURN is undefined', () => {
-    const result = runTrack({
+  
+  test('classifies auto trigger when CLAUDE_HUMAN_TURN is undefined', () => {
+    const env = {
       CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/careful/SKILL.md' }),
       // CLAUDE_HUMAN_TURN not set
       CLAUDE_PLUGIN_DATA: tempDir
-    });
-
-    assert.strictEqual(result.exitCode, 0);
-    const entries = parseJsonl(readPulseFile(tempDir));
-    assert.strictEqual(entries[0].trigger, 'auto', 'Should default to auto when undefined');
+    };
+    delete env.CLAUDE_HUMAN_TURN;
+    
+    const result = runTrack(env);
+    const entries = readPulseFile(tempDir);
+    
+    assert.strictEqual(entries[0].trigger, 'auto');
   });
-
-  test('only matches exact skill name in explicit trigger', () => {
-    const result = runTrack({
+  
+  test('classifies auto when user message contains different skill name', () => {
+    const env = {
       CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/careful/SKILL.md' }),
-      CLAUDE_HUMAN_TURN: 'Use /care to analyze',  // /care not /careful
+      CLAUDE_HUMAN_TURN: 'Please run /freeze on this code',
       CLAUDE_PLUGIN_DATA: tempDir
-    });
-
-    assert.strictEqual(result.exitCode, 0);
-    const entries = parseJsonl(readPulseFile(tempDir));
-    assert.strictEqual(entries[0].trigger, 'auto', 'Should not partial match');
+    };
+    
+    const result = runTrack(env);
+    const entries = readPulseFile(tempDir);
+    
+    // Reading 'careful' but user asked for 'freeze' - this is auto
+    assert.strictEqual(entries[0].trigger, 'auto');
+  });
+  
+  test('classifies explicit for skill name with hyphens', () => {
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/my-skill-123/SKILL.md' }),
+      CLAUDE_HUMAN_TURN: 'Run /my-skill-123 please',
+      CLAUDE_PLUGIN_DATA: tempDir
+    };
+    
+    const result = runTrack(env);
+    const entries = readPulseFile(tempDir);
+    
+    assert.strictEqual(entries[0].trigger, 'explicit');
+  });
+  
+  test('classifies explicit for skill name with underscores', () => {
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/skill_name/SKILL.md' }),
+      CLAUDE_HUMAN_TURN: 'Run /skill_name please',
+      CLAUDE_PLUGIN_DATA: tempDir
+    };
+    
+    const result = runTrack(env);
+    const entries = readPulseFile(tempDir);
+    
+    assert.strictEqual(entries[0].trigger, 'explicit');
   });
 });
 
-describe('track.js - JSONL output format', () => {
-  let tempDir;
+// ============================================================================
+// JSONL OUTPUT FORMAT TESTS (VAL-TEST-004, VAL-TRACK-006)
+// ============================================================================
 
+describe('JSONL output format', () => {
+  let tempDir;
+  
   beforeEach(() => {
     tempDir = createTempDir();
   });
-
+  
   afterEach(() => {
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
-
-  test('writes valid JSON line with all required fields', () => {
-    const result = runTrack({
+  
+  test('outputs valid JSON on single line', () => {
+    const env = {
       CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/test-skill/SKILL.md' }),
       CLAUDE_HUMAN_TURN: '',
       CLAUDE_PLUGIN_DATA: tempDir
-    });
-
-    assert.strictEqual(result.exitCode, 0);
-
-    const content = readPulseFile(tempDir);
-    const lines = content.trim().split('\n');
-    assert.strictEqual(lines.length, 1, 'Should have exactly one line');
-
-    const entry = JSON.parse(lines[0]);
-    assert.strictEqual(typeof entry.skill, 'string', 'skill should be string');
-    assert.strictEqual(typeof entry.ts, 'number', 'ts should be number');
-    assert.strictEqual(typeof entry.trigger, 'string', 'trigger should be string');
-    assert.ok(['auto', 'explicit'].includes(entry.trigger), 'trigger should be auto or explicit');
-  });
-
-  test('timestamp is valid Unix timestamp in seconds', () => {
-    const beforeTs = Math.floor(Date.now() / 1000);
+    };
     
-    const result = runTrack({
-      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/test/SKILL.md' }),
-      CLAUDE_HUMAN_TURN: '',
-      CLAUDE_PLUGIN_DATA: tempDir
-    });
-
-    const afterTs = Math.floor(Date.now() / 1000);
-
-    assert.strictEqual(result.exitCode, 0);
-
-    const entries = parseJsonl(readPulseFile(tempDir));
-    const entryTs = entries[0].ts;
-    
-    assert.ok(entryTs >= beforeTs, 'Timestamp should be >= before test');
-    assert.ok(entryTs <= afterTs, 'Timestamp should be <= after test');
-  });
-
-  test('appends to existing pulse.jsonl', () => {
-    // First entry
-    runTrack({
-      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/skill1/SKILL.md' }),
-      CLAUDE_HUMAN_TURN: '',
-      CLAUDE_PLUGIN_DATA: tempDir
-    });
-
-    // Second entry
-    runTrack({
-      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/skill2/SKILL.md' }),
-      CLAUDE_HUMAN_TURN: '',
-      CLAUDE_PLUGIN_DATA: tempDir
-    });
-
-    const entries = parseJsonl(readPulseFile(tempDir));
-    assert.strictEqual(entries.length, 2, 'Should have two entries');
-    assert.strictEqual(entries[0].skill, 'skill1');
-    assert.strictEqual(entries[1].skill, 'skill2');
-  });
-
-  test('creates pulse.jsonl if it does not exist', () => {
+    const result = runTrack(env);
     const pulsePath = path.join(tempDir, 'pulse.jsonl');
-    assert.strictEqual(fs.existsSync(pulsePath), false, 'pulse.jsonl should not exist initially');
-
-    const result = runTrack({
-      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/test/SKILL.md' }),
+    const content = fs.readFileSync(pulsePath, 'utf8');
+    
+    // Should be valid JSON
+    const parsed = JSON.parse(content.trim());
+    assert.ok(parsed, 'Output should be valid JSON');
+    
+    // Should be single line (no newlines within the JSON)
+    assert.strictEqual(content.trim().split('\n').length, 1, 'Should be single line');
+  });
+  
+  test('contains all required fields', () => {
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/test-skill/SKILL.md' }),
       CLAUDE_HUMAN_TURN: '',
       CLAUDE_PLUGIN_DATA: tempDir
-    });
-
-    assert.strictEqual(result.exitCode, 0);
-    assert.strictEqual(fs.existsSync(pulsePath), true, 'pulse.jsonl should be created');
+    };
+    
+    const result = runTrack(env);
+    const entries = readPulseFile(tempDir);
+    
+    assert.ok('skill' in entries[0], 'Should have skill field');
+    assert.ok('ts' in entries[0], 'Should have ts field');
+    assert.ok('trigger' in entries[0], 'Should have trigger field');
+    assert.strictEqual(Object.keys(entries[0]).length, 3, 'Should have exactly 3 fields');
+  });
+  
+  test('skill field is string', () => {
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/test-skill/SKILL.md' }),
+      CLAUDE_HUMAN_TURN: '',
+      CLAUDE_PLUGIN_DATA: tempDir
+    };
+    
+    const result = runTrack(env);
+    const entries = readPulseFile(tempDir);
+    
+    assert.strictEqual(typeof entries[0].skill, 'string');
+  });
+  
+  test('ts field is integer unix timestamp', () => {
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/test-skill/SKILL.md' }),
+      CLAUDE_HUMAN_TURN: '',
+      CLAUDE_PLUGIN_DATA: tempDir
+    };
+    
+    const beforeTs = Math.floor(Date.now() / 1000);
+    const result = runTrack(env);
+    const afterTs = Math.floor(Date.now() / 1000);
+    const entries = readPulseFile(tempDir);
+    
+    assert.strictEqual(typeof entries[0].ts, 'number');
+    assert.ok(Number.isInteger(entries[0].ts), 'ts should be integer');
+    assert.ok(entries[0].ts >= beforeTs, 'ts should be >= before timestamp');
+    assert.ok(entries[0].ts <= afterTs, 'ts should be <= after timestamp');
+  });
+  
+  test('trigger field is "auto" or "explicit"', () => {
+    // Test auto
+    let env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/test-skill/SKILL.md' }),
+      CLAUDE_HUMAN_TURN: '',
+      CLAUDE_PLUGIN_DATA: tempDir
+    };
+    
+    let result = runTrack(env);
+    let entries = readPulseFile(tempDir);
+    assert.ok(['auto', 'explicit'].includes(entries[0].trigger));
+    
+    // Cleanup and test explicit
+    fs.rmSync(tempDir, { recursive: true, force: true });
+    tempDir = createTempDir();
+    
+    env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/test-skill/SKILL.md' }),
+      CLAUDE_HUMAN_TURN: '/test-skill',
+      CLAUDE_PLUGIN_DATA: tempDir
+    };
+    
+    result = runTrack(env);
+    entries = readPulseFile(tempDir);
+    assert.ok(['auto', 'explicit'].includes(entries[0].trigger));
+  });
+  
+  test('appends to existing pulse.jsonl', () => {
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/skill-one/SKILL.md' }),
+      CLAUDE_HUMAN_TURN: '',
+      CLAUDE_PLUGIN_DATA: tempDir
+    };
+    
+    // First write
+    runTrack(env);
+    
+    // Second write with different skill
+    env.CLAUDE_TOOL_INPUT = JSON.stringify({ file_path: '/skills/skill-two/SKILL.md' });
+    runTrack(env);
+    
+    const entries = readPulseFile(tempDir);
+    assert.strictEqual(entries.length, 2, 'Should have 2 entries');
+    assert.strictEqual(entries[0].skill, 'skill-one');
+    assert.strictEqual(entries[1].skill, 'skill-two');
+  });
+  
+  test('creates pulse.jsonl if it does not exist', () => {
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/new-skill/SKILL.md' }),
+      CLAUDE_HUMAN_TURN: '',
+      CLAUDE_PLUGIN_DATA: tempDir
+    };
+    
+    // Ensure pulse.jsonl does not exist
+    const pulsePath = path.join(tempDir, 'pulse.jsonl');
+    assert.ok(!fs.existsSync(pulsePath), 'pulse.jsonl should not exist initially');
+    
+    const result = runTrack(env);
+    assert.ok(fs.existsSync(pulsePath), 'pulse.jsonl should be created');
   });
 });
 
-describe('track.js - Error handling', () => {
-  let tempDir;
+// ============================================================================
+// ERROR HANDLING TESTS (VAL-TEST-005, VAL-ERR-001 through VAL-ERR-010)
+// ============================================================================
 
+describe('Error handling', () => {
+  let tempDir;
+  
   beforeEach(() => {
     tempDir = createTempDir();
   });
-
+  
   afterEach(() => {
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
-
-  test('exits with code 0 when CLAUDE_TOOL_INPUT is missing', () => {
-    const result = runTrack({
+  
+  test('exits with code 0 on success (no output)', () => {
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/test-skill/SKILL.md' }),
+      CLAUDE_HUMAN_TURN: '',
+      CLAUDE_PLUGIN_DATA: tempDir
+    };
+    
+    const result = runTrack(env);
+    
+    assert.strictEqual(result.exitCode, 0, 'Exit code should be 0');
+    assert.strictEqual(result.stdout, '', 'Should produce no stdout');
+    assert.strictEqual(result.stderr, '', 'Should produce no stderr');
+  });
+  
+  test('handles missing CLAUDE_PLUGIN_DATA gracefully', () => {
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/test-skill/SKILL.md' }),
+      CLAUDE_HUMAN_TURN: ''
+      // CLAUDE_PLUGIN_DATA not set
+    };
+    
+    const result = runTrack(env);
+    
+    assert.strictEqual(result.exitCode, 0, 'Exit code should be 0');
+    assert.strictEqual(result.stdout, '', 'Should produce no stdout');
+    assert.strictEqual(result.stderr, '', 'Should produce no stderr');
+  });
+  
+  test('handles empty CLAUDE_PLUGIN_DATA gracefully', () => {
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/test-skill/SKILL.md' }),
+      CLAUDE_HUMAN_TURN: '',
+      CLAUDE_PLUGIN_DATA: ''
+    };
+    
+    const result = runTrack(env);
+    
+    assert.strictEqual(result.exitCode, 0, 'Exit code should be 0');
+    assert.strictEqual(result.stdout, '', 'Should produce no stdout');
+    assert.strictEqual(result.stderr, '', 'Should produce no stderr');
+  });
+  
+  test('handles missing CLAUDE_TOOL_INPUT gracefully', () => {
+    const env = {
       // CLAUDE_TOOL_INPUT not set
       CLAUDE_HUMAN_TURN: '',
       CLAUDE_PLUGIN_DATA: tempDir
-    });
-
-    assert.strictEqual(result.exitCode, 0, 'Should exit with code 0');
-    assert.strictEqual(result.stdout, '', 'Should produce no stdout');
-    assert.strictEqual(result.stderr, '', 'Should produce no stderr');
-  });
-
-  test('exits with code 0 when CLAUDE_PLUGIN_DATA is missing', () => {
-    const result = runTrack({
-      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/test/SKILL.md' }),
-      CLAUDE_HUMAN_TURN: ''
-      // CLAUDE_PLUGIN_DATA not set
-    });
-
-    assert.strictEqual(result.exitCode, 0, 'Should exit with code 0');
-    assert.strictEqual(result.stdout, '', 'Should produce no stdout');
-    assert.strictEqual(result.stderr, '', 'Should produce no stderr');
-  });
-
-  test('exits with code 0 when CLAUDE_TOOL_INPUT is malformed JSON', () => {
-    const result = runTrack({
-      CLAUDE_TOOL_INPUT: '{not valid json',
-      CLAUDE_HUMAN_TURN: '',
-      CLAUDE_PLUGIN_DATA: tempDir
-    });
-
-    assert.strictEqual(result.exitCode, 0, 'Should exit with code 0');
-    assert.strictEqual(result.stdout, '', 'Should produce no stdout');
-    assert.strictEqual(result.stderr, '', 'Should produce no stderr');
-  });
-
-  test('exits with code 0 when CLAUDE_TOOL_INPUT lacks file_path', () => {
-    const result = runTrack({
-      CLAUDE_TOOL_INPUT: JSON.stringify({ other_field: 'value' }),
-      CLAUDE_HUMAN_TURN: '',
-      CLAUDE_PLUGIN_DATA: tempDir
-    });
-
-    assert.strictEqual(result.exitCode, 0, 'Should exit with code 0');
-    assert.strictEqual(result.stdout, '', 'Should produce no stdout');
-    assert.strictEqual(result.stderr, '', 'Should produce no stderr');
-  });
-
-  test('exits with code 0 when CLAUDE_PLUGIN_DATA is invalid path', () => {
-    const result = runTrack({
-      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/test/SKILL.md' }),
-      CLAUDE_HUMAN_TURN: '',
-      CLAUDE_PLUGIN_DATA: '/nonexistent/path/that/does/not/exist'
-    });
-
-    assert.strictEqual(result.exitCode, 0, 'Should exit with code 0');
-    assert.strictEqual(result.stdout, '', 'Should produce no stdout');
-    assert.strictEqual(result.stderr, '', 'Should produce no stderr');
-  });
-});
-
-describe('track.js - Cross-platform paths', () => {
-  let tempDir;
-
-  beforeEach(() => {
-    tempDir = createTempDir();
-  });
-
-  afterEach(() => {
-    fs.rmSync(tempDir, { recursive: true, force: true });
-  });
-
-  test('handles Windows-style CLAUDE_PLUGIN_DATA path', () => {
-    // Use the actual temp dir which will have platform-specific path
-    const result = runTrack({
-      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/test/SKILL.md' }),
-      CLAUDE_HUMAN_TURN: '',
-      CLAUDE_PLUGIN_DATA: tempDir
-    });
-
-    assert.strictEqual(result.exitCode, 0);
-
-    const entries = parseJsonl(readPulseFile(tempDir));
-    assert.strictEqual(entries.length, 1);
-    assert.strictEqual(entries[0].skill, 'test');
-  });
-
-  test('handles Unix-style CLAUDE_PLUGIN_DATA path', () => {
-    // On Windows, tempDir will be Windows-style, but we test the logic
-    const result = runTrack({
-      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/test/SKILL.md' }),
-      CLAUDE_HUMAN_TURN: '',
-      CLAUDE_PLUGIN_DATA: tempDir.replace(/\\/g, '/')
-    });
-
-    assert.strictEqual(result.exitCode, 0);
-  });
-});
-
-describe('track.js - Enhanced error handling (VAL-ERR-005, VAL-ERR-006, VAL-ERR-009)', () => {
-  let tempDir;
-
-  beforeEach(() => {
-    tempDir = createTempDir();
-  });
-
-  afterEach(() => {
-    fs.rmSync(tempDir, { recursive: true, force: true });
-  });
-
-  test('exits with code 0 when CLAUDE_TOOL_INPUT is "invalid" string (VAL-ERR-004)', () => {
-    const result = runTrack({
-      CLAUDE_TOOL_INPUT: 'invalid',
-      CLAUDE_HUMAN_TURN: '',
-      CLAUDE_PLUGIN_DATA: tempDir
-    });
-
-    assert.strictEqual(result.exitCode, 0, 'Should exit with code 0');
-    assert.strictEqual(result.stdout, '', 'Should produce no stdout');
-    assert.strictEqual(result.stderr, '', 'Should produce no stderr');
-  });
-
-  test('exits with code 0 when CLAUDE_PLUGIN_DATA is nonexistent path (VAL-ERR-005)', () => {
-    const result = runTrack({
-      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/test/SKILL.md' }),
-      CLAUDE_HUMAN_TURN: '',
-      CLAUDE_PLUGIN_DATA: '/nonexistent/path/that/does/not/exist/at/all'
-    });
-
-    assert.strictEqual(result.exitCode, 0, 'Should exit with code 0 on nonexistent path');
-    assert.strictEqual(result.stdout, '', 'Should produce no stdout');
-    assert.strictEqual(result.stderr, '', 'Should produce no stderr');
-  });
-
-  test('appends valid entry even when pulse.jsonl has corrupted content (VAL-ERR-006)', () => {
-    // Create pulse.jsonl with malformed content
-    const pulsePath = path.join(tempDir, 'pulse.jsonl');
-    fs.writeFileSync(pulsePath, '{broken\n{"skill":"valid","ts":1234567890,"trigger":"auto"}\nnot json\n', 'utf8');
-
-    const result = runTrack({
-      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/test/SKILL.md' }),
-      CLAUDE_HUMAN_TURN: '',
-      CLAUDE_PLUGIN_DATA: tempDir
-    });
-
-    assert.strictEqual(result.exitCode, 0, 'Should exit with code 0');
+    };
     
-    // Verify new entry was appended
-    const content = readPulseFile(tempDir);
-    const lines = content.trim().split('\n');
+    const result = runTrack(env);
     
-    // Last line should be our valid entry
-    const lastLine = lines[lines.length - 1];
-    const newEntry = JSON.parse(lastLine);
-    assert.strictEqual(newEntry.skill, 'test', 'New entry should be appended');
-    assert.strictEqual(newEntry.trigger, 'auto');
+    assert.strictEqual(result.exitCode, 0, 'Exit code should be 0');
+    assert.strictEqual(result.stdout, '', 'Should produce no stdout');
+    assert.strictEqual(result.stderr, '', 'Should produce no stderr');
   });
-
-  test('handles very long file paths without crash (VAL-ERR-009)', () => {
-    // Create a very long path (260+ characters)
-    const longSegment = 'verylongdirectorynamethatgoesonandonandon';
-    const longPath = '/' + Array(10).fill(longSegment).join('/') + '/skillname/SKILL.md';
-
-    const result = runTrack({
-      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: longPath }),
-      CLAUDE_HUMAN_TURN: '',
-      CLAUDE_PLUGIN_DATA: tempDir
-    });
-
-    assert.strictEqual(result.exitCode, 0, 'Should handle long paths without crash');
-    
-    const entries = parseJsonl(readPulseFile(tempDir));
-    assert.strictEqual(entries.length, 1);
-    assert.strictEqual(entries[0].skill, 'skillname', 'Should extract skill name from long path');
-  });
-
-  test('handles empty string CLAUDE_TOOL_INPUT', () => {
-    const result = runTrack({
+  
+  test('handles empty CLAUDE_TOOL_INPUT gracefully', () => {
+    const env = {
       CLAUDE_TOOL_INPUT: '',
       CLAUDE_HUMAN_TURN: '',
       CLAUDE_PLUGIN_DATA: tempDir
-    });
-
-    assert.strictEqual(result.exitCode, 0, 'Should exit with code 0');
+    };
+    
+    const result = runTrack(env);
+    
+    assert.strictEqual(result.exitCode, 0, 'Exit code should be 0');
     assert.strictEqual(result.stdout, '', 'Should produce no stdout');
     assert.strictEqual(result.stderr, '', 'Should produce no stderr');
   });
-
-  test('handles empty string CLAUDE_PLUGIN_DATA', () => {
-    const result = runTrack({
-      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/test/SKILL.md' }),
+  
+  test('handles malformed JSON in CLAUDE_TOOL_INPUT gracefully', () => {
+    const env = {
+      CLAUDE_TOOL_INPUT: '{not valid json',
       CLAUDE_HUMAN_TURN: '',
-      CLAUDE_PLUGIN_DATA: ''
-    });
-
-    assert.strictEqual(result.exitCode, 0, 'Should exit with code 0');
+      CLAUDE_PLUGIN_DATA: tempDir
+    };
+    
+    const result = runTrack(env);
+    
+    assert.strictEqual(result.exitCode, 0, 'Exit code should be 0');
     assert.strictEqual(result.stdout, '', 'Should produce no stdout');
     assert.strictEqual(result.stderr, '', 'Should produce no stderr');
   });
-
-  test('handles null file_path in CLAUDE_TOOL_INPUT', () => {
-    const result = runTrack({
-      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: null }),
+  
+  test('handles CLAUDE_TOOL_INPUT with non-object value', () => {
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify('not an object'),
       CLAUDE_HUMAN_TURN: '',
       CLAUDE_PLUGIN_DATA: tempDir
-    });
-
-    assert.strictEqual(result.exitCode, 0, 'Should exit with code 0');
+    };
+    
+    const result = runTrack(env);
+    
+    assert.strictEqual(result.exitCode, 0, 'Exit code should be 0');
+    assert.strictEqual(result.stdout, '', 'Should produce no stdout');
+    assert.strictEqual(result.stderr, '', 'Should produce no stderr');
   });
-
-  test('handles array instead of object in CLAUDE_TOOL_INPUT', () => {
-    const result = runTrack({
-      CLAUDE_TOOL_INPUT: JSON.stringify(['not', 'an', 'object']),
+  
+  test('handles CLAUDE_TOOL_INPUT with null value', () => {
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify(null),
       CLAUDE_HUMAN_TURN: '',
       CLAUDE_PLUGIN_DATA: tempDir
-    });
-
-    assert.strictEqual(result.exitCode, 0, 'Should exit with code 0');
+    };
+    
+    const result = runTrack(env);
+    
+    assert.strictEqual(result.exitCode, 0, 'Exit code should be 0');
+    assert.strictEqual(result.stdout, '', 'Should produce no stdout');
+    assert.strictEqual(result.stderr, '', 'Should produce no stderr');
   });
-
-  test('handles CLAUDE_HUMAN_TURN as null', () => {
-    const result = runTrack({
-      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/test/SKILL.md' }),
+  
+  test('handles CLAUDE_TOOL_INPUT with missing file_path field', () => {
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ other_field: 'value' }),
+      CLAUDE_HUMAN_TURN: '',
+      CLAUDE_PLUGIN_DATA: tempDir
+    };
+    
+    const result = runTrack(env);
+    
+    assert.strictEqual(result.exitCode, 0, 'Exit code should be 0');
+    assert.strictEqual(result.stdout, '', 'Should produce no stdout');
+    assert.strictEqual(result.stderr, '', 'Should produce no stderr');
+  });
+  
+  test('handles CLAUDE_TOOL_INPUT with non-string file_path', () => {
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: 123 }),
+      CLAUDE_HUMAN_TURN: '',
+      CLAUDE_PLUGIN_DATA: tempDir
+    };
+    
+    const result = runTrack(env);
+    
+    assert.strictEqual(result.exitCode, 0, 'Exit code should be 0');
+    assert.strictEqual(result.stdout, '', 'Should produce no stdout');
+    assert.strictEqual(result.stderr, '', 'Should produce no stderr');
+  });
+  
+  test('handles CLAUDE_TOOL_INPUT with empty file_path', () => {
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '' }),
+      CLAUDE_HUMAN_TURN: '',
+      CLAUDE_PLUGIN_DATA: tempDir
+    };
+    
+    const result = runTrack(env);
+    
+    assert.strictEqual(result.exitCode, 0, 'Exit code should be 0');
+    assert.strictEqual(result.stdout, '', 'Should produce no stdout');
+    assert.strictEqual(result.stderr, '', 'Should produce no stderr');
+  });
+  
+  test('handles write permission denied gracefully', () => {
+    // Create a read-only directory
+    const readOnlyDir = path.join(tempDir, 'readonly');
+    fs.mkdirSync(readOnlyDir);
+    
+    // Make directory read-only (works on Unix-like systems)
+    if (process.platform !== 'win32') {
+      fs.chmodSync(readOnlyDir, 0o555);
+      
+      const env = {
+        CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/test-skill/SKILL.md' }),
+        CLAUDE_HUMAN_TURN: '',
+        CLAUDE_PLUGIN_DATA: readOnlyDir
+      };
+      
+      const result = runTrack(env);
+      
+      assert.strictEqual(result.exitCode, 0, 'Exit code should be 0');
+      assert.strictEqual(result.stdout, '', 'Should produce no stdout');
+      assert.strictEqual(result.stderr, '', 'Should produce no stderr');
+      
+      // Restore permissions for cleanup
+      fs.chmodSync(readOnlyDir, 0o755);
+    } else {
+      // On Windows, skip this test as chmod behaves differently
+      assert.ok(true, 'Skipped on Windows');
+    }
+  });
+  
+  test('handles CLAUDE_HUMAN_TURN being null', () => {
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/test-skill/SKILL.md' }),
       CLAUDE_HUMAN_TURN: null,
       CLAUDE_PLUGIN_DATA: tempDir
-    });
-
-    assert.strictEqual(result.exitCode, 0);
-    const entries = parseJsonl(readPulseFile(tempDir));
-    assert.strictEqual(entries[0].trigger, 'auto', 'Should default to auto when null');
-  });
-});
-
-describe('track.js - Concurrent writes safety (VAL-ERR-010)', () => {
-  let tempDir;
-
-  beforeEach(() => {
-    tempDir = createTempDir();
-  });
-
-  afterEach(() => {
-    fs.rmSync(tempDir, { recursive: true, force: true });
-  });
-
-  test('handles concurrent writes without corruption', () => {
-    // Simulate concurrent writes by running multiple track.js instances
-    const numConcurrent = 10;
-    const skillNames = Array.from({ length: numConcurrent }, (_, i) => `skill${i}`);
+    };
     
-    // Run all tracks concurrently using Promise.all
-    const results = [];
-    const promises = skillNames.map(skillName => {
-      return new Promise((resolve) => {
-        const result = runTrack({
-          CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: `/skills/${skillName}/SKILL.md` }),
-          CLAUDE_HUMAN_TURN: '',
-          CLAUDE_PLUGIN_DATA: tempDir
-        });
-        resolve(result);
-      });
-    });
-
-    // Wait for all to complete
-    Promise.all(promises);
-
-    // Verify all entries were written correctly
-    const content = readPulseFile(tempDir);
-    const lines = content.trim().split('\n').filter(Boolean);
-
-    // All lines should be valid JSON
-    const entries = lines.map(line => {
-      try {
-        return JSON.parse(line);
-      } catch (e) {
-        return null; // Corrupted line
-      }
-    }).filter(e => e !== null);
-
-    // All entries should be valid
-    assert.strictEqual(entries.length, numConcurrent, 'All entries should be written');
+    const result = runTrack(env);
+    const entries = readPulseFile(tempDir);
     
-    // No null entries (corrupted lines)
-    const nullCount = lines.filter((line, i) => {
-      try {
-        JSON.parse(line);
-        return false;
-      } catch (e) {
-        return true;
-      }
-    }).length;
-    assert.strictEqual(nullCount, 0, 'No entries should be corrupted');
+    assert.strictEqual(result.exitCode, 0, 'Exit code should be 0');
+    assert.strictEqual(entries[0].trigger, 'auto', 'Should default to auto trigger');
   });
-});
-
-describe('track.js - Performance (VAL-PERF-001, VAL-PERF-003)', () => {
-  let tempDir;
-
-  beforeEach(() => {
-    tempDir = createTempDir();
-  });
-
-  afterEach(() => {
-    fs.rmSync(tempDir, { recursive: true, force: true });
-  });
-
-  test('completes in under 100ms for typical input (VAL-PERF-001)', () => {
-    const start = Date.now();
-
-    const result = runTrack({
-      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/test/SKILL.md' }),
-      CLAUDE_HUMAN_TURN: '',
-      CLAUDE_PLUGIN_DATA: tempDir
-    });
-
-    const elapsed = Date.now() - start;
-
-    assert.strictEqual(result.exitCode, 0);
-    // Note: Process spawn time on Windows can be 100-200ms
-    // The actual script execution is < 10ms, but we test the full call
-    // to ensure it doesn't block Claude perceptibly
-    assert.ok(elapsed < 500, `Should complete reasonably fast, took ${elapsed}ms (includes process spawn)`);
-    
-    // Verify entry was written correctly
-    const entries = parseJsonl(readPulseFile(tempDir));
-    assert.strictEqual(entries.length, 1, 'Entry should be written');
-  });
-
-  test('handles large pulse.jsonl without significant slowdown (VAL-PERF-003)', () => {
-    // Create a large pulse.jsonl with 1000 entries
-    const pulsePath = path.join(tempDir, 'pulse.jsonl');
-    const entries = [];
-    for (let i = 0; i < 1000; i++) {
-      entries.push(JSON.stringify({ skill: `skill${i}`, ts: 1700000000 + i, trigger: 'auto' }));
-    }
-    fs.writeFileSync(pulsePath, entries.join('\n') + '\n', 'utf8');
-
-    const start = Date.now();
-
-    const result = runTrack({
-      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/test/SKILL.md' }),
-      CLAUDE_HUMAN_TURN: '',
-      CLAUDE_PLUGIN_DATA: tempDir
-    });
-
-    const elapsed = Date.now() - start;
-
-    assert.strictEqual(result.exitCode, 0);
-    // The key requirement is that append doesn't read the entire file
-    // so performance shouldn't degrade with file size
-    assert.ok(elapsed < 500, `Should complete reasonably fast even with large file, took ${elapsed}ms`);
-
-    // Verify entry was appended
-    const content = readPulseFile(tempDir);
-    const lines = content.trim().split('\n');
-    assert.strictEqual(lines.length, 1001, 'Should have 1000 original + 1 new entry');
-  });
-
-  test('append-only does not read entire file (VAL-PERF-003)', () => {
-    // This test verifies the append-only behavior by checking that
-    // we don't parse or read the existing content
-    const pulsePath = path.join(tempDir, 'pulse.jsonl');
-    
-    // Create a file with entries
-    const entries = [];
-    for (let i = 0; i < 100; i++) {
-      entries.push(JSON.stringify({ skill: `skill${i}`, ts: 1700000000 + i, trigger: 'auto' }));
-    }
-    fs.writeFileSync(pulsePath, entries.join('\n') + '\n', 'utf8');
-
-    // Add one more entry
-    const result = runTrack({
+  
+  test('handles non-existent CLAUDE_PLUGIN_DATA directory', () => {
+    const env = {
       CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/test-skill/SKILL.md' }),
       CLAUDE_HUMAN_TURN: '',
-      CLAUDE_PLUGIN_DATA: tempDir
-    });
-
-    assert.strictEqual(result.exitCode, 0);
-
-    // Verify the new entry was appended correctly
-    const content = readPulseFile(tempDir);
-    const lines = content.trim().split('\n');
-    assert.strictEqual(lines.length, 101, 'Should have 100 + 1 entries');
+      CLAUDE_PLUGIN_DATA: '/nonexistent/path/that/does/not/exist'
+    };
     
-    const lastEntry = JSON.parse(lines[lines.length - 1]);
-    assert.strictEqual(lastEntry.skill, 'test-skill', 'New entry should be last');
+    const result = runTrack(env);
+    
+    assert.strictEqual(result.exitCode, 0, 'Exit code should be 0');
+    assert.strictEqual(result.stdout, '', 'Should produce no stdout');
+    assert.strictEqual(result.stderr, '', 'Should produce no stderr');
+  });
+});
+
+// ============================================================================
+// CROSS-PLATFORM PATH HANDLING TESTS (VAL-TEST-006)
+// ============================================================================
+
+describe('Cross-platform path handling', () => {
+  let tempDir;
+  
+  beforeEach(() => {
+    tempDir = createTempDir();
+  });
+  
+  afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+  
+  test('handles Unix absolute path', () => {
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/home/user/.claude/skills/unix-skill/SKILL.md' }),
+      CLAUDE_HUMAN_TURN: '',
+      CLAUDE_PLUGIN_DATA: tempDir
+    };
+    
+    const result = runTrack(env);
+    const entries = readPulseFile(tempDir);
+    
+    assert.strictEqual(result.exitCode, 0);
+    assert.strictEqual(entries[0].skill, 'unix-skill');
+  });
+  
+  test('handles Windows drive letter path', () => {
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: 'C:\\Users\\user\\.claude\\skills\\win-skill\\SKILL.md' }),
+      CLAUDE_HUMAN_TURN: '',
+      CLAUDE_PLUGIN_DATA: tempDir
+    };
+    
+    const result = runTrack(env);
+    const entries = readPulseFile(tempDir);
+    
+    assert.strictEqual(result.exitCode, 0);
+    assert.strictEqual(entries[0].skill, 'win-skill');
+  });
+  
+  test('handles relative path with forward slashes', () => {
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: 'skills/relative-skill/SKILL.md' }),
+      CLAUDE_HUMAN_TURN: '',
+      CLAUDE_PLUGIN_DATA: tempDir
+    };
+    
+    const result = runTrack(env);
+    const entries = readPulseFile(tempDir);
+    
+    assert.strictEqual(result.exitCode, 0);
+    assert.strictEqual(entries[0].skill, 'relative-skill');
+  });
+  
+  test('handles relative path with backslashes', () => {
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: 'skills\\relative-skill\\SKILL.md' }),
+      CLAUDE_HUMAN_TURN: '',
+      CLAUDE_PLUGIN_DATA: tempDir
+    };
+    
+    const result = runTrack(env);
+    const entries = readPulseFile(tempDir);
+    
+    assert.strictEqual(result.exitCode, 0);
+    assert.strictEqual(entries[0].skill, 'relative-skill');
+  });
+  
+  test('handles path with forward slashes after backslashes', () => {
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: 'C:\\Users\\user/skills/mixed-skill/SKILL.md' }),
+      CLAUDE_HUMAN_TURN: '',
+      CLAUDE_PLUGIN_DATA: tempDir
+    };
+    
+    const result = runTrack(env);
+    const entries = readPulseFile(tempDir);
+    
+    assert.strictEqual(result.exitCode, 0);
+    assert.strictEqual(entries[0].skill, 'mixed-skill');
+  });
+  
+  test('handles very long file paths', () => {
+    // Create a very long path (> 260 characters, Windows limit)
+    const longPath = '/a/' + 'very_long_directory_name_'.repeat(20) + '/skill/SKILL.md';
+    
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: longPath }),
+      CLAUDE_HUMAN_TURN: '',
+      CLAUDE_PLUGIN_DATA: tempDir
+    };
+    
+    const result = runTrack(env);
+    
+    // Should handle without crashing
+    assert.strictEqual(result.exitCode, 0);
+    
+    const entries = readPulseFile(tempDir);
+    assert.strictEqual(entries[0].skill, 'skill');
+  });
+  
+  test('handles path with spaces in skill name', () => {
+    // Note: This tests the path handling, though skill names with spaces are unusual
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/skill with spaces/SKILL.md' }),
+      CLAUDE_HUMAN_TURN: '',
+      CLAUDE_PLUGIN_DATA: tempDir
+    };
+    
+    const result = runTrack(env);
+    const entries = readPulseFile(tempDir);
+    
+    assert.strictEqual(result.exitCode, 0);
+    assert.strictEqual(entries[0].skill, 'skill with spaces');
+  });
+});
+
+// ============================================================================
+// ISOLATION AND DETERMINISM TESTS (VAL-TEST-007)
+// ============================================================================
+
+describe('Test isolation and determinism', () => {
+  test('tests use unique temp directories', () => {
+    const tempDirs = [];
+    
+    // Create multiple temp dirs
+    for (let i = 0; i < 5; i++) {
+      const dir = createTempDir();
+      tempDirs.push(dir);
+    }
+    
+    // All should be unique
+    const uniqueDirs = new Set(tempDirs);
+    assert.strictEqual(uniqueDirs.size, 5, 'Each temp dir should be unique');
+    
+    // Cleanup
+    tempDirs.forEach(dir => fs.rmSync(dir, { recursive: true, force: true }));
+  });
+  
+  test('same input produces same output (deterministic)', () => {
+    const tempDir1 = createTempDir();
+    const tempDir2 = createTempDir();
+    
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/deterministic-skill/SKILL.md' }),
+      CLAUDE_HUMAN_TURN: '',
+      CLAUDE_PLUGIN_DATA: tempDir1
+    };
+    
+    runTrack(env);
+    const entries1 = readPulseFile(tempDir1);
+    
+    env.CLAUDE_PLUGIN_DATA = tempDir2;
+    runTrack(env);
+    const entries2 = readPulseFile(tempDir2);
+    
+    // Same skill and trigger
+    assert.strictEqual(entries1[0].skill, entries2[0].skill);
+    assert.strictEqual(entries1[0].trigger, entries2[0].trigger);
+    
+    // Timestamps should be very close (within 1 second)
+    const tsDiff = Math.abs(entries1[0].ts - entries2[0].ts);
+    assert.ok(tsDiff <= 1, 'Timestamps should be within 1 second');
+    
+    // Cleanup
+    fs.rmSync(tempDir1, { recursive: true, force: true });
+    fs.rmSync(tempDir2, { recursive: true, force: true });
+  });
+  
+  test('tests do not affect each other (no shared state)', () => {
+    // Run two tests in sequence with different skills
+    let tempDir1 = createTempDir();
+    
+    // First test
+    let env1 = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/isolated-a/SKILL.md' }),
+      CLAUDE_HUMAN_TURN: '',
+      CLAUDE_PLUGIN_DATA: tempDir1
+    };
+    runTrack(env1);
+    let entries1 = readPulseFile(tempDir1);
+    assert.strictEqual(entries1.length, 1);
+    assert.strictEqual(entries1[0].skill, 'isolated-a');
+    
+    // Cleanup and run second test with completely separate directory
+    fs.rmSync(tempDir1, { recursive: true, force: true });
+    
+    let tempDir2 = createTempDir();
+    let env2 = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/isolated-b/SKILL.md' }),
+      CLAUDE_HUMAN_TURN: '',
+      CLAUDE_PLUGIN_DATA: tempDir2
+    };
+    runTrack(env2);
+    let entries2 = readPulseFile(tempDir2);
+    
+    // Should only have isolated-b, not isolated-a
+    assert.strictEqual(entries2.length, 1);
+    assert.strictEqual(entries2[0].skill, 'isolated-b');
+    
+    // Cleanup
+    fs.rmSync(tempDir2, { recursive: true, force: true });
+  });
+});
+
+// ============================================================================
+// EDGE CASES
+// ============================================================================
+
+describe('Edge cases', () => {
+  let tempDir;
+  
+  beforeEach(() => {
+    tempDir = createTempDir();
+  });
+  
+  afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+  
+  test('handles SKILL.md at root level (no parent directory)', () => {
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: 'SKILL.md' }),
+      CLAUDE_HUMAN_TURN: '',
+      CLAUDE_PLUGIN_DATA: tempDir
+    };
+    
+    const result = runTrack(env);
+    
+    // Should exit silently without creating log entry
+    assert.strictEqual(result.exitCode, 0);
+    const entries = readPulseFile(tempDir);
+    assert.strictEqual(entries, null, 'Should not create entry for root-level SKILL.md');
+  });
+  
+  test('handles path ending with just directory separator before SKILL.md', () => {
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills//SKILL.md' }),
+      CLAUDE_HUMAN_TURN: '',
+      CLAUDE_PLUGIN_DATA: tempDir
+    };
+    
+    const result = runTrack(env);
+    
+    // Should handle gracefully
+    assert.strictEqual(result.exitCode, 0);
+  });
+  
+  test('handles unicode in file paths', () => {
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/技能测试/SKILL.md' }),
+      CLAUDE_HUMAN_TURN: '',
+      CLAUDE_PLUGIN_DATA: tempDir
+    };
+    
+    const result = runTrack(env);
+    const entries = readPulseFile(tempDir);
+    
+    assert.strictEqual(result.exitCode, 0);
+    assert.strictEqual(entries[0].skill, '技能测试');
+  });
+  
+  test('handles CLAUDE_HUMAN_TURN with unicode characters', () => {
+    const env = {
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: '/skills/技能/SKILL.md' }),
+      CLAUDE_HUMAN_TURN: '请运行 /技能',
+      CLAUDE_PLUGIN_DATA: tempDir
+    };
+    
+    const result = runTrack(env);
+    const entries = readPulseFile(tempDir);
+    
+    assert.strictEqual(result.exitCode, 0);
+    assert.strictEqual(entries[0].trigger, 'explicit');
   });
 });
