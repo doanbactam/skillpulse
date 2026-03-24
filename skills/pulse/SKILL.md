@@ -1,68 +1,53 @@
 ---
 name: pulse
-version: 1.0.0
-description: |
-  See your Claude Code skills come alive. Track usage, discover patterns,
-  identify unused skills, and keep your setup lean.
-
-  Use when: "skill usage", "which skills do i use", "skill stats", "pulse"
-allowed-tools:
-  - Bash
-  - Read
+description: Show which Claude Code skills you use most. Usage: /skillpulse:pulse [24h|7d|30d|all]
+disable-model-invocation: true
+allowed-tools: Read, Bash
 ---
 
-## SkillPulse Analytics
+# SkillPulse Analytics
 
-Track your skill usage with beautiful, actionable insights.
+Read the analytics log at `${CLAUDE_PLUGIN_DATA}/pulse.jsonl`
 
-### Quick Commands
+Parse each line as JSON with fields: skill, ts (unix timestamp), trigger
 
-```bash
-# Default: 7 days pulse
-~/.claude/plugins/skillpulse/skills/pulse/bin/pulse.sh
+Filter by time period from the command argument (default: 7d):
+- 24h = last 86400 seconds
+- 7d  = last 604800 seconds
+- 30d = last 2592000 seconds
+- all = no filter
 
-# Time periods
-~/.claude/plugins/skillpulse/skills/pulse/bin/pulse.sh 24h    # Today
-~/.claude/plugins/skillpulse/skills/pulse/bin/pulse.sh 7d     # Week
-~/.claude/plugins/skillpulse/skills/pulse/bin/pulse.sh 30d    # Month
-~/.claude/plugins/skillpulse/skills/pulse/bin/pulse.sh all    # All time
-```
+Then scan `${CLAUDE_PLUGINS_DIR}` and `~/.claude/skills/` for all installed skill folders (directories containing SKILL.md). This gives you total installed count.
 
-### Output Format
+Output this exact format to terminal:
 
 ```
-╭─────────────────────────────────────────────────────╮
-│  SkillPulse • Last 7 days                            │
-├─────────────────────────────────────────────────────┤
-│  📊 39 skills • 11 used • 28 unused                 │
-│                                                       │
-│  🔥 Hot                                               │
-│  /careful    98 calls  ████████████████████          │
-│  /freeze     18 calls  ███                          │
-│  /ship       13 calls  ██                           │
-│                                                       │
-│  ❄️  Cold (28 unused)                                │
-│  /baseline-ui, /benchmark, /browse...                │
-╰─────────────────────────────────────────────────────╯
-
-💡 Remove unused: rm -rf ~/.claude/skills/SKILL_NAME
+╭──────────────────────────────────────────╮
+│  skillpulse • Last 7 days                │
+├──────────────────────────────────────────┤
+│  {total} skills • {used} used • {unused} unused  │
+│                                          │
+│  🔥 Hot                                  │
+│  /{skill}    {n} calls  {bar}            │
+│  ...                                     │
+│                                          │
+│  ❄️  Cold ({unused} unused)               │
+│  /{skill}, /{skill}, ...                 │
+╰──────────────────────────────────────────╯
 ```
 
-### For Skill Authors
+Bar = "█" characters, max 20, proportional to top skill count.
+Cold = skills installed but zero invocations in the period.
 
-Add pulse tracking to your skill — add this after your frontmatter:
+## Implementation Steps
 
-```markdown
-## Pulse
-
-```bash
-# Log skill invocation (silent)
-echo "{\"skill\":\"YOUR_SKILL_NAME\",\"ts\":$(date +%s)}" >> ~/.claude/skills/pulse.jsonl 2>/dev/null || true
-```
-```
-
-### Analytics File
-
-Data stored at: `~/.claude/skills/pulse.jsonl`
-
-Format: `{"skill":"name","ts":1234567890}`
+1. Read `${CLAUDE_PLUGIN_DATA}/pulse.jsonl` (create empty if doesn't exist)
+2. Calculate cutoff timestamp based on period
+3. Parse each JSON line, filter by timestamp
+4. Count invocations per skill
+5. Scan for installed skills:
+   - List directories in `${CLAUDE_PLUGINS_DIR}` containing `skills/` subdirs
+   - List directories in `~/.claude/skills/`
+   - Extract skill names from folder names containing SKILL.md
+6. Render output with ASCII box formatting
+7. Show cleanup hint: `💡 Remove unused: rm -rf ~/.claude/skills/SKILL_NAME`

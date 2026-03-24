@@ -1,0 +1,11 @@
+{
+  "name": "skillpulse",
+  "version": "2.0.0",
+  "description": "Track which Claude Code skills you actually use",
+  "author": {
+    "name": "doanbactam",
+    "url": "https://github.com/doanbactam/skillpulse"
+  },
+  "repository": "https://github.com/doanbactam/skillpulse",
+  "license": "MIT"
+}
