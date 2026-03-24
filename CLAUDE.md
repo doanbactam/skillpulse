@@ -6,6 +6,8 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 SkillPulse is a Claude Code plugin that tracks skill usage analytics passively via hooks.
 
+**Cross-platform:** Works on Windows, macOS, and Linux.
+
 ## Plugin Structure
 
 ```
@@ -15,7 +17,10 @@ skillpulse/
 ├── hooks/
 │   └── hooks.json           # PostToolUse hook for passive tracking
 ├── scripts/
-│   └── track.sh             # Hook script that logs skill usage
+│   ├── track.js             # Hook script that logs skill usage (Node.js)
+│   ├── rotate.js            # Data rotation script
+│   ├── export.js            # Export script (JSON/CSV)
+│   └── reset.js             # Reset script
 ├── skills/
 │   └── pulse/
 │       └── SKILL.md         # Skill that powers /skillpulse:pulse
@@ -28,7 +33,7 @@ skillpulse/
 
 The `hooks/hooks.json` defines a `PostToolUse` hook that fires after every `Read` tool call.
 
-`scripts/track.sh` receives:
+`scripts/track.js` receives:
 - `CLAUDE_TOOL_INPUT` — JSON input of the Read tool (contains file path)
 - `CLAUDE_HUMAN_TURN` — Last user message (to detect explicit skill invocation)
 - `CLAUDE_PLUGIN_DATA` — Plugin's writable data directory
@@ -63,6 +68,12 @@ claude --plugin-dir ./skillpulse
 Then:
 1. Trigger a few skills (Claude will read their SKILL.md files)
 2. Run `/skillpulse:pulse` to verify data flows
+
+## Running Tests
+
+```bash
+node --test scripts/*.test.js
+```
 
 ## Install Flow (for users)
 
