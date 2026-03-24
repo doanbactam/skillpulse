@@ -7,25 +7,51 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 
-export const ANALYTICS_FILE = path.join(os.homedir(), '.claude', 'skills', 'pulse.jsonl');
-export const SKILLS_DIR = path.join(os.homedir(), '.claude', 'skills');
+// Default paths (can be overridden via setPaths for testing)
+let _analyticsFile = path.join(os.homedir(), '.claude', 'skills', 'pulse.jsonl');
+let _skillsDir = path.join(os.homedir(), '.claude', 'skills');
+
+export const ANALYTICS_FILE = new Proxy({}, {
+  get() { return _analyticsFile; },
+  set(_, v) { _analyticsFile = v; return true; }
+});
+export const SKILLS_DIR = new Proxy({}, {
+  get() { return _skillsDir; },
+  set(_, v) { _skillsDir = v; return true; }
+});
+
+// For testing: override paths
+export function setPaths(analyticsFile, skillsDir) {
+  if (analyticsFile) _analyticsFile = analyticsFile;
+  if (skillsDir) _skillsDir = skillsDir;
+}
+
+// For testing: reset to defaults
+export function resetPaths() {
+  _analyticsFile = path.join(os.homedir(), '.claude', 'skills', 'pulse.jsonl');
+  _skillsDir = path.join(os.homedir(), '.claude', 'skills');
+}
+
+// Get actual path values (for when proxy might not work in all contexts)
+export function getAnalyticsPath() { return _analyticsFile; }
+export function getSkillsPath() { return _skillsDir; }
 
 // Ensure directory exists (idempotent)
 export function ensureStorage() {
-  fs.mkdirSync(path.dirname(ANALYTICS_FILE), { recursive: true });
+  fs.mkdirSync(path.dirname(_analyticsFile), { recursive: true });
 }
 
 // Append a single entry
 export function appendEntry(entry) {
   ensureStorage();
-  fs.appendFileSync(ANALYTICS_FILE, JSON.stringify(entry) + '\n');
+  fs.appendFileSync(_analyticsFile, JSON.stringify(entry) + '\n');
 }
 
 // Read entries within time range
 export function* readEntriesSince(cutoff) {
-  if (!fs.existsSync(ANALYTICS_FILE)) return;
+  if (!fs.existsSync(_analyticsFile)) return;
 
-  const content = fs.readFileSync(ANALYTICS_FILE, 'utf-8');
+  const content = fs.readFileSync(_analyticsFile, 'utf-8');
   for (const line of content.split('\n')) {
     if (!line) continue;
     try {
@@ -56,16 +82,21 @@ export function aggregateStats(entries) {
 
 // List installed skills
 export function* listInstalledSkills() {
-  const dirs = fs.readdirSync(SKILLS_DIR, { withFileTypes: true });
-  for (const dir of dirs) {
-    if (!dir.isDirectory()) continue;
-    yield dir.name;
+  try {
+    const dirs = fs.readdirSync(_skillsDir, { withFileTypes: true });
+    for (const dir of dirs) {
+      if (!dir.isDirectory()) continue;
+      yield dir.name;
+    }
+  } catch {
+    // Directory doesn't exist or can't be read
+    return;
   }
 }
 
 // Read skill description
 export function readSkillDescription(skillName) {
-  const skillFile = path.join(SKILLS_DIR, skillName, 'SKILL.md');
+  const skillFile = path.join(_skillsDir, skillName, 'SKILL.md');
   try {
     const content = fs.readFileSync(skillFile, 'utf-8');
     const match = content.match(/^description:\s*\n([\s\S]*?)(?=\n---|\nallowed-tools:|$)/m);

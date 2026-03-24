@@ -10,7 +10,12 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "test:e2e": "bash tests/e2e/pulse-cli.test.sh"
+    "test": "node --test tests/**/*.test.js",
+    "test:unit": "node --test tests/unit/**/*.test.js",
+    "test:integration": "node --test tests/integration/**/*.test.js",
+    "test:e2e": "bash tests/e2e/pulse-cli.test.sh",
+    "test:all": "npm run test && npm run test:e2e",
+    "coverage": "node --experimental-test-coverage --test tests/**/*.test.js"
   },
   "keywords": [
     "claude",

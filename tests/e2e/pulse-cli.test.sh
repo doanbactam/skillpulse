@@ -99,7 +99,7 @@ setup_test_env() {
 
   # Create analytics file (note: not in skills dir to avoid being counted)
   mkdir -p "$(dirname "$ANALYTICS_FILE")"
-  touch "$ANALYTICS_FILE"
+  echo -n > "$ANALYTICS_FILE"  # Truncate to ensure empty file
 }
 
 # Test 1: Empty analytics file
