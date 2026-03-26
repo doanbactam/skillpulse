@@ -237,7 +237,7 @@ describe('Test Helper Functions', () => {
 
       Storage.setPaths(analyticsFile, null);
 
-      Storage.appendEntry({ skill: 'test', ts: 123456, outcome: 'success' });
+      Storage.appendEntrySync({ skill: 'test', ts: 123456, outcome: 'success' });
 
       assert.ok(fs.existsSync(analyticsFile));
       const content = fs.readFileSync(analyticsFile, 'utf-8');
@@ -252,7 +252,7 @@ describe('Test Helper Functions', () => {
       const analyticsFile = path.join(testDir, 'test-analytics.jsonl');
 
       Storage.setPaths(analyticsFile, null);
-      Storage.appendEntry({ skill: 'test', ts: 123456, outcome: 'success' });
+      Storage.appendEntrySync({ skill: 'test', ts: 123456, outcome: 'success' });
 
       const entries = [...Storage.readEntriesSince(0)];
 

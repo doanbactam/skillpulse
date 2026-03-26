@@ -22,15 +22,29 @@ export const LogPulse = {
     },
     required: ['skill'],
   },
-  handle(args) {
+  async handle(args) {
     const { skill, outcome = 'success' } = args;
+
+    // Input validation
+    if (!skill || typeof skill !== 'string' || !skill.trim()) {
+      throw new Error('Invalid skill name: must be a non-empty string');
+    }
+    // Prevent path traversal attacks
+    if (skill.includes('/') || skill.includes('..') || skill.includes('\\')) {
+      throw new Error('Invalid skill name: contains invalid characters');
+    }
+    // Limit skill name length
+    if (skill.length > 100) {
+      throw new Error('Invalid skill name: exceeds maximum length of 100 characters');
+    }
+
     const entry = {
-      skill,
+      skill: skill.trim(),
       outcome,
       ts: Math.floor(Date.now() / 1000),
       pid: process.pid,
     };
-    Storage.appendEntry(entry);
+    await Storage.appendEntry(entry);
     return {
       content: [{ type: 'text', text: `Logged usage for skill: ${skill}` }],
     };

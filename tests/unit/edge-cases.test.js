@@ -61,9 +61,9 @@ describe('Edge Cases', () => {
       assert.strictEqual(entries[0].skill, null);
     });
 
-    it('should handle very long skill names', () => {
+    it('should handle very long skill names', async () => {
       const longName = 'a'.repeat(1000);
-      Storage.appendEntry({ skill: longName, ts: Date.now() / 1000, outcome: 'success' });
+      Storage.appendEntrySync({ skill: longName, ts: Date.now() / 1000, outcome: 'success' });
 
       const entries = [...Storage.readEntriesSince(0)];
       assert.strictEqual(entries[0].skill, longName);
@@ -80,7 +80,7 @@ describe('Edge Cases', () => {
       ];
 
       for (const name of specialNames) {
-        Storage.appendEntry({ skill: name, ts: Date.now() / 1000, outcome: 'success' });
+        Storage.appendEntrySync({ skill: name, ts: Date.now() / 1000, outcome: 'success' });
       }
 
       const entries = [...Storage.readEntriesSince(0)];
@@ -96,7 +96,7 @@ describe('Edge Cases', () => {
       ];
 
       for (const name of unicodeNames) {
-        Storage.appendEntry({ skill: name, ts: Date.now() / 1000, outcome: 'success' });
+        Storage.appendEntrySync({ skill: name, ts: Date.now() / 1000, outcome: 'success' });
       }
 
       const entries = [...Storage.readEntriesSince(0)];
@@ -105,14 +105,14 @@ describe('Edge Cases', () => {
 
     it('should handle extremely large timestamps', () => {
       const maxTimestamp = Math.floor(Date.now() / 1000) + 1000000000;
-      Storage.appendEntry({ skill: 'future', ts: maxTimestamp, outcome: 'success' });
+      Storage.appendEntrySync({ skill: 'future', ts: maxTimestamp, outcome: 'success' });
 
       const entries = [...Storage.readEntriesSince(0)];
       assert.strictEqual(entries[0].ts, maxTimestamp);
     });
 
     it('should handle negative timestamps', () => {
-      Storage.appendEntry({ skill: 'negative', ts: -1000000, outcome: 'success' });
+      Storage.appendEntrySync({ skill: 'negative', ts: -1000000, outcome: 'success' });
 
       // Use cutoff lower than the negative timestamp to include it
       const entries = [...Storage.readEntriesSince(-2000000)];
@@ -120,7 +120,7 @@ describe('Edge Cases', () => {
     });
 
     it('should handle zero timestamp', () => {
-      Storage.appendEntry({ skill: 'zero', ts: 0, outcome: 'success' });
+      Storage.appendEntrySync({ skill: 'zero', ts: 0, outcome: 'success' });
 
       const entries = [...Storage.readEntriesSince(0)];
       assert.strictEqual(entries[0].ts, 0);
@@ -128,7 +128,7 @@ describe('Edge Cases', () => {
 
     it('should handle floating point timestamps (should be truncated)', () => {
       // The timestamp will be stored as-is, then parsed
-      Storage.appendEntry({ skill: 'float', ts: 1234567890.789, outcome: 'success' });
+      Storage.appendEntrySync({ skill: 'float', ts: 1234567890.789, outcome: 'success' });
 
       const entries = [...Storage.readEntriesSince(0)];
       // JSON preserves the float
@@ -202,7 +202,7 @@ describe('Edge Cases', () => {
     it('should handle thousands of entries', () => {
       const count = 5000;
       for (let i = 0; i < count; i++) {
-        Storage.appendEntry({ skill: `skill-${i % 100}`, ts: Date.now() / 1000 - i, outcome: 'success' });
+        Storage.appendEntrySync({ skill: `skill-${i % 100}`, ts: Date.now() / 1000 - i, outcome: 'success' });
       }
 
       const entries = [...Storage.readEntriesSince(0)];
@@ -212,7 +212,7 @@ describe('Edge Cases', () => {
     it('should aggregate stats for many different skills', () => {
       const skillCount = 1000;
       for (let i = 0; i < skillCount; i++) {
-        Storage.appendEntry({ skill: `skill-${i}`, ts: Date.now() / 1000, outcome: 'success' });
+        Storage.appendEntrySync({ skill: `skill-${i}`, ts: Date.now() / 1000, outcome: 'success' });
       }
 
       const entries = [...Storage.readEntriesSince(0)];
@@ -224,7 +224,7 @@ describe('Edge Cases', () => {
     it('should handle very long JSON lines', () => {
       const longValue = 'x'.repeat(10000);
       const entry = { skill: 'test', ts: Date.now() / 1000, outcome: 'success', data: longValue };
-      Storage.appendEntry(entry);
+      Storage.appendEntrySync(entry);
 
       const content = fs.readFileSync(MOCK_ANALYTICS_FILE, 'utf-8');
       assert.ok(content.length > 10000);
@@ -277,8 +277,8 @@ describe('Edge Cases', () => {
   });
 
   describe('Handlers - Edge Cases', () => {
-    it('should handle skill name with only spaces', () => {
-      const result = LogPulse.handle({ skill: '   ', outcome: 'success' });
+    it('should handle skill name with only spaces', async () => {
+      const result = await LogPulse.handle({ skill: '   ', outcome: 'success' });
 
       assert.strictEqual(result.content[0].type, 'text');
       const content = fs.readFileSync(MOCK_ANALYTICS_FILE, 'utf-8');
@@ -287,10 +287,10 @@ describe('Edge Cases', () => {
 
     it('should handle all outcome types correctly', () => {
       const now = Date.now() / 1000;
-      Storage.appendEntry({ skill: 'test', ts: now, outcome: 'success' });
-      Storage.appendEntry({ skill: 'test', ts: now - 1, outcome: 'error' });
-      Storage.appendEntry({ skill: 'test', ts: now - 2, outcome: 'abort' });
-      Storage.appendEntry({ skill: 'test', ts: now - 3, outcome: 'unknown' });
+      Storage.appendEntrySync({ skill: 'test', ts: now, outcome: 'success' });
+      Storage.appendEntrySync({ skill: 'test', ts: now - 1, outcome: 'error' });
+      Storage.appendEntrySync({ skill: 'test', ts: now - 2, outcome: 'abort' });
+      Storage.appendEntrySync({ skill: 'test', ts: now - 3, outcome: 'unknown' });
 
       const entries = [...Storage.readEntriesSince(0)];
       const stats = Storage.aggregateStats(entries);
@@ -309,7 +309,7 @@ describe('Edge Cases', () => {
       for (let i = 0; i < 100; i++) {
         promises.push(
           new Promise(resolve => {
-            Storage.appendEntry({ skill: `skill-${i}`, ts: Date.now() / 1000, outcome: 'success' });
+            Storage.appendEntrySync({ skill: `skill-${i}`, ts: Date.now() / 1000, outcome: 'success' });
             resolve();
           })
         );
@@ -447,9 +447,9 @@ describe('Edge Cases', () => {
   describe('AggregateStats - Edge Cases', () => {
     it('should handle entries with same timestamp', () => {
       const now = Date.now() / 1000;
-      Storage.appendEntry({ skill: 'test', ts: now, outcome: 'success' });
-      Storage.appendEntry({ skill: 'test', ts: now, outcome: 'error' });
-      Storage.appendEntry({ skill: 'test', ts: now, outcome: 'abort' });
+      Storage.appendEntrySync({ skill: 'test', ts: now, outcome: 'success' });
+      Storage.appendEntrySync({ skill: 'test', ts: now, outcome: 'error' });
+      Storage.appendEntrySync({ skill: 'test', ts: now, outcome: 'abort' });
 
       const entries = [...Storage.readEntriesSince(0)];
       const stats = Storage.aggregateStats(entries);
@@ -461,9 +461,9 @@ describe('Edge Cases', () => {
       const now = Date.now() / 1000;
       const cutoff = now - 100;
 
-      Storage.appendEntry({ skill: 'at', ts: cutoff, outcome: 'success' });
-      Storage.appendEntry({ skill: 'before', ts: cutoff - 1, outcome: 'success' });
-      Storage.appendEntry({ skill: 'after', ts: cutoff + 1, outcome: 'success' });
+      Storage.appendEntrySync({ skill: 'at', ts: cutoff, outcome: 'success' });
+      Storage.appendEntrySync({ skill: 'before', ts: cutoff - 1, outcome: 'success' });
+      Storage.appendEntrySync({ skill: 'after', ts: cutoff + 1, outcome: 'success' });
 
       const entries = [...Storage.readEntriesSince(cutoff)];
       assert.strictEqual(entries.length, 2); // at and after

@@ -106,7 +106,7 @@ describe('Property-Based Tests', () => {
       const entries = Random.array(count, () => Random.entry());
 
       for (const entry of entries) {
-        Storage.appendEntry(entry);
+        Storage.appendEntrySync(entry);
       }
 
       const readEntries = [...Storage.readEntriesSince(0)];
@@ -118,7 +118,7 @@ describe('Property-Based Tests', () => {
       const entries = Random.array(count, () => Random.entry());
 
       for (const entry of entries) {
-        Storage.appendEntry(entry);
+        Storage.appendEntrySync(entry);
       }
 
       const readEntries = [...Storage.readEntriesSince(0)];
@@ -141,7 +141,7 @@ describe('Property-Based Tests', () => {
         expectedCounts[skill] = calls;
 
         for (let i = 0; i < calls; i++) {
-          Storage.appendEntry({
+          Storage.appendEntrySync({
             skill,
             ts: Date.now() / 1000 - i,
             outcome: Random.outcome(),
@@ -164,7 +164,7 @@ describe('Property-Based Tests', () => {
 
       // Mix valid and empty skill names
       for (let i = 0; i < count; i++) {
-        Storage.appendEntry({
+        Storage.appendEntrySync({
           skill: Math.random() > 0.5 ? validSkill : '',
           ts: Date.now() / 1000 - i,
           outcome: 'success',
@@ -202,7 +202,7 @@ describe('Property-Based Tests', () => {
 
       // Create entries spanning long time range
       for (let i = 0; i < count; i++) {
-        Storage.appendEntry({
+        Storage.appendEntrySync({
           skill: Random.skillName(),
           ts: now - Random.int(1000, 10000000), // Wide range
           outcome: 'success',
@@ -227,7 +227,7 @@ describe('Property-Based Tests', () => {
       ];
 
       for (const point of timePoints) {
-        Storage.appendEntry({
+        Storage.appendEntrySync({
           skill: 'test',
           ts: point.ts,
           outcome: 'success',
@@ -258,7 +258,7 @@ describe('Property-Based Tests', () => {
         totalCalls += calls;
 
         for (let i = 0; i < calls; i++) {
-          Storage.appendEntry({
+          Storage.appendEntrySync({
             skill,
             ts: Date.now() / 1000 - i,
             outcome: 'success',
@@ -278,7 +278,7 @@ describe('Property-Based Tests', () => {
       const outcomes = ['success', 'error', 'abort', 'unknown'];
 
       for (let i = 0; i < count; i++) {
-        Storage.appendEntry({
+        Storage.appendEntrySync({
           skill: Random.skillName(),
           ts: Date.now() / 1000 - i,
           outcome: Random.oneOf(outcomes),
@@ -303,7 +303,7 @@ describe('Property-Based Tests', () => {
       for (const skill of skills) {
         const calls = Random.int(1, 50);
         for (let i = 0; i < calls; i++) {
-          Storage.appendEntry({
+          Storage.appendEntrySync({
             skill,
             ts: Date.now() / 1000 - i,
             outcome: 'success',
@@ -325,7 +325,7 @@ describe('Property-Based Tests', () => {
       const count = Random.int(10, 100);
 
       for (let i = 0; i < count; i++) {
-        Storage.appendEntry({
+        Storage.appendEntrySync({
           skill,
           ts: Date.now() / 1000 - i,
           outcome: Random.outcome(),
@@ -342,9 +342,9 @@ describe('Property-Based Tests', () => {
   });
 
   describe('Handler Properties', () => {
-    it('should always return content array from handlers', () => {
+    it('should always return content array from handlers', async () => {
       const handlers = [
-        () => LogPulse.handle({ skill: Random.skillName() }),
+        () => await LogPulse.handle({ skill: Random.skillName() }),
         () => GetSkillStats.handle({ period: Random.oneOf(['24h', '7d', '30d', 'all']) }),
       ];
 
@@ -356,7 +356,7 @@ describe('Property-Based Tests', () => {
       }
     });
 
-    it('should include skill name in log_pulse response', () => {
+    it('should include skill name in log_pulse response', async () => {
       const skillNames = Random.array(10, () => Random.skillName());
 
       for (const skill of skillNames) {
@@ -384,7 +384,7 @@ describe('Property-Based Tests', () => {
       const original = Random.array(Random.int(10, 50), () => Random.entry());
 
       for (const entry of original) {
-        Storage.appendEntry(entry);
+        Storage.appendEntrySync(entry);
       }
 
       const readEntries = [...Storage.readEntriesSince(0)];
@@ -404,7 +404,7 @@ describe('Property-Based Tests', () => {
       );
 
       for (const entry of entries) {
-        Storage.appendEntry(entry);
+        Storage.appendEntrySync(entry);
       }
 
       const readEntries = [...Storage.readEntriesSince(0)];
@@ -424,7 +424,7 @@ describe('Property-Based Tests', () => {
     it('should return same stats for multiple reads', () => {
       const count = Random.int(10, 50);
       for (let i = 0; i < count; i++) {
-        Storage.appendEntry(Random.entry());
+        Storage.appendEntrySync(Random.entry());
       }
 
       const stats1 = Storage.aggregateStats([...Storage.readEntriesSince(0)]);
@@ -448,14 +448,14 @@ describe('Property-Based Tests', () => {
 
       // Write in original order
       for (const entry of entries) {
-        Storage.appendEntry(entry);
+        Storage.appendEntrySync(entry);
       }
       const stats1 = Storage.aggregateStats([...Storage.readEntriesSince(0)]);
 
       // Clear and write in reverse order
       fs.writeFileSync(MOCK_ANALYTICS_FILE, '');
       for (const entry of [...entries].reverse()) {
-        Storage.appendEntry(entry);
+        Storage.appendEntrySync(entry);
       }
       const stats2 = Storage.aggregateStats([...Storage.readEntriesSince(0)]);
 
@@ -505,7 +505,7 @@ describe('Property-Based Tests', () => {
     it('should handle cutoff at exactly entry timestamp', () => {
       const now = Date.now() / 1000;
       const exactEntry = { skill: 'exact', ts: now, outcome: 'success' };
-      Storage.appendEntry(exactEntry);
+      Storage.appendEntrySync(exactEntry);
 
       const entries = [...Storage.readEntriesSince(now)];
       assert.strictEqual(entries.length, 1);
@@ -515,7 +515,7 @@ describe('Property-Based Tests', () => {
     it('should handle cutoff just before entry timestamp', () => {
       const now = Date.now() / 1000;
       const entry = { skill: 'after', ts: now + 1, outcome: 'success' };
-      Storage.appendEntry(entry);
+      Storage.appendEntrySync(entry);
 
       const entries = [...Storage.readEntriesSince(now)];
       assert.strictEqual(entries.length, 1);
@@ -524,7 +524,7 @@ describe('Property-Based Tests', () => {
     it('should handle cutoff just after entry timestamp', () => {
       const now = Date.now() / 1000;
       const entry = { skill: 'before', ts: now - 1, outcome: 'success' };
-      Storage.appendEntry(entry);
+      Storage.appendEntrySync(entry);
 
       const entries = [...Storage.readEntriesSince(now)];
       assert.strictEqual(entries.length, 0);
@@ -548,7 +548,7 @@ describe('Fuzz Tests', () => {
         charset: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_/@.:',
       });
 
-      Storage.appendEntry({
+      Storage.appendEntrySync({
         skill: skillName,
         ts: Date.now() / 1000 - i,
         outcome: 'success',
@@ -563,7 +563,7 @@ describe('Fuzz Tests', () => {
     const count = 50;
 
     for (let i = 0; i < count; i++) {
-      Storage.appendEntry({
+      Storage.appendEntrySync({
         skill: 'test',
         ts: Random.int(-1000000000, Date.now() / 1000 + 1000000),
         outcome: 'success',
@@ -579,7 +579,7 @@ describe('Fuzz Tests', () => {
     const count = 100;
 
     for (let i = 0; i < count; i++) {
-      Storage.appendEntry({
+      Storage.appendEntrySync({
         skill: 'test',
         ts: Date.now() / 1000 - i,
         outcome: Random.int(0, 1) ? 'success' : 'error',

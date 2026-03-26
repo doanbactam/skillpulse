@@ -41,7 +41,7 @@ describe('Stress Tests', () => {
       const startTime = Date.now();
 
       for (let i = 0; i < count; i++) {
-        Storage.appendEntry({
+        Storage.appendEntrySync({
           skill: `skill-${i % 100}`,
           ts: Date.now() / 1000 - i,
           outcome: ['success', 'error', 'abort'][i % 3],
@@ -68,7 +68,7 @@ describe('Stress Tests', () => {
       const skillCount = 100;
 
       for (let i = 0; i < count; i++) {
-        Storage.appendEntry({
+        Storage.appendEntrySync({
           skill: `skill-${i % skillCount}`,
           ts: Date.now() / 1000 - i,
           outcome: 'success',
@@ -99,7 +99,7 @@ describe('Stress Tests', () => {
       const skillCount = 10000;
 
       for (let i = 0; i < skillCount; i++) {
-        Storage.appendEntry({
+        Storage.appendEntrySync({
           skill: `skill-${String(i).padStart(5, '0')}`,
           ts: Date.now() / 1000 - i,
           outcome: 'success',
@@ -132,7 +132,7 @@ describe('Stress Tests', () => {
       const startTime = Date.now();
 
       for (let i = 0; i < count; i++) {
-        Storage.appendEntry({
+        Storage.appendEntrySync({
           skill: 'rapid',
           ts: Date.now() / 1000 - i,
           outcome: 'success',
@@ -157,7 +157,7 @@ describe('Stress Tests', () => {
       // Interleaved writes
       for (let i = 0; i < writesPerSkill; i++) {
         for (const skill of skills) {
-          Storage.appendEntry({
+          Storage.appendEntrySync({
             skill,
             ts: Date.now() / 1000 - (i * skills.length + skills.indexOf(skill)),
             outcome: 'success',
@@ -180,7 +180,7 @@ describe('Stress Tests', () => {
 
       const count = 50000;
       for (let i = 0; i < count; i++) {
-        Storage.appendEntry({
+        Storage.appendEntrySync({
           skill: `skill-${i % 50}`,
           ts: Date.now() / 1000 - i,
           outcome: 'success',
@@ -204,7 +204,7 @@ describe('Stress Tests', () => {
       const count = 100;
 
       for (let i = 0; i < count; i++) {
-        Storage.appendEntry({
+        Storage.appendEntrySync({
           skill: longName,
           ts: Date.now() / 1000 - i,
           outcome: 'success',
@@ -223,7 +223,7 @@ describe('Stress Tests', () => {
       const largeData = 'x'.repeat(5000);
 
       for (let i = 0; i < count; i++) {
-        Storage.appendEntry({
+        Storage.appendEntrySync({
           skill: 'test',
           ts: Date.now() / 1000 - i,
           outcome: 'success',
@@ -249,7 +249,7 @@ describe('Stress Tests', () => {
       const startTime = Date.now();
 
       for (let i = 0; i < count; i++) {
-        Storage.appendEntry({
+        Storage.appendEntrySync({
           skill: `skill-${i % 100}`,
           ts: Date.now() / 1000 - i,
           outcome: 'success',
@@ -285,7 +285,7 @@ describe('Stress Tests', () => {
 
       // Create entries spanning 2 months
       for (let i = 0; i < count; i++) {
-        Storage.appendEntry({
+        Storage.appendEntrySync({
           skill: 'test',
           ts: now - Random.int(0, 5184000), // 0 to 60 days
           outcome: 'success',
@@ -322,7 +322,7 @@ describe('Stress Tests', () => {
       for (let i = 0; i < skillCount; i++) {
         const calls = skillCount - i; // Descending call counts
         for (let j = 0; j < calls; j++) {
-          Storage.appendEntry({
+          Storage.appendEntrySync({
             skill: `skill-${String(i).padStart(4, '0')}`,
             ts: now - j,
             outcome: 'success',
@@ -356,7 +356,7 @@ describe('Stress Tests', () => {
 
       for (let i = 0; i < skillCount; i++) {
         for (let j = 0; j < callsPerSkill; j++) {
-          Storage.appendEntry({
+          Storage.appendEntrySync({
             skill: `skill-${i}`,
             ts: Date.now() / 1000 - (i * callsPerSkill + j),
             outcome: 'success',
@@ -380,7 +380,7 @@ describe('Stress Tests', () => {
       const count = 10000;
 
       for (let i = 0; i < count; i++) {
-        Storage.appendEntry({
+        Storage.appendEntrySync({
           skill: 'only-skill',
           ts: Date.now() / 1000 - i,
           outcome: 'success',
@@ -403,7 +403,7 @@ describe('Stress Tests', () => {
       // Write many valid entries
       const validCount = 10000;
       for (let i = 0; i < validCount; i++) {
-        Storage.appendEntry({
+        Storage.appendEntrySync({
           skill: 'test',
           ts: Date.now() / 1000 - i,
           outcome: 'success',

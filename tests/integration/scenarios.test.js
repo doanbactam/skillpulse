@@ -33,17 +33,17 @@ describe('Integration Scenarios', () => {
   afterEach(cleanupTestDir);
 
   describe('Daily Workflow Scenario', () => {
-    it('should track typical daily skill usage', () => {
+    it('should track typical daily skill usage', async () => {
       const now = Date.now() / 1000;
       const dayAgo = now - 86400;
 
       // User starts their day
       // 1. Uses /careful before a destructive operation
-      LogPulse.handle({ skill: 'careful', outcome: 'success' });
+      await await LogPulse.handle({ skill: 'careful', outcome: 'success' });
 
       // 2. Does some development with /browse
       for (let i = 0; i < 5; i++) {
-        LogPulse.handle({
+        await LogPulse.handle({
           skill: 'browse',
           ts: now - Random(0, 3600),
           outcome: 'success',
@@ -51,12 +51,12 @@ describe('Integration Scenarios', () => {
       }
 
       // 3. Runs tests with /qa
-      LogPulse.handle({ skill: 'qa', outcome: 'success' });
-      LogPulse.handle({ skill: 'qa', outcome: 'error' }); // Found bugs
-      LogPulse.handle({ skill: 'qa', outcome: 'success' }); // Bugs fixed
+      await LogPulse.handle({ skill: 'qa', outcome: 'success' });
+      await LogPulse.handle({ skill: 'qa', outcome: 'error' }); // Found bugs
+      await LogPulse.handle({ skill: 'qa', outcome: 'success' }); // Bugs fixed
 
       // 4. Reviews code with /review
-      LogPulse.handle({ skill: 'review', outcome: 'success' });
+      await LogPulse.handle({ skill: 'review', outcome: 'success' });
 
       // Check daily stats
       const stats = GetSkillStats.handle({ period: '24h' });
@@ -67,7 +67,7 @@ describe('Integration Scenarios', () => {
       assert.ok(data.stats.some(s => s.skill === 'qa' && s.error === 1));
     });
 
-    it('should show skill discovery pattern', () => {
+    it('should show skill discovery pattern', async () => {
       const skills = [
         'careful', 'freeze', 'qa', 'review', 'browse',
         'baseline-ui', 'shadcn', 'frontend-design',
@@ -87,7 +87,7 @@ describe('Integration Scenarios', () => {
       const usedSkills = ['qa', 'review', 'browse'];
       for (const skill of usedSkills) {
         for (let i = 0; i < Random(2, 10); i++) {
-          LogPulse.handle({ skill, outcome: 'success' });
+          await LogPulse.handle({ skill, outcome: 'success' });
         }
       }
 
@@ -106,7 +106,7 @@ describe('Integration Scenarios', () => {
   });
 
   describe('Skill Cleanup Workflow', () => {
-    it('should identify candidates for removal', () => {
+    it('should identify candidates for removal', async () => {
       const now = Date.now() / 1000;
       const weekAgo = now - 604800;
 
@@ -128,7 +128,7 @@ describe('Integration Scenarios', () => {
       for (const skill of activeSkills) {
         const calls = Random(5, 20);
         for (let i = 0; i < calls; i++) {
-          LogPulse.handle({
+          await LogPulse.handle({
             skill,
             ts: now - Random(0, 604800),
             outcome: 'success',
@@ -138,7 +138,7 @@ describe('Integration Scenarios', () => {
 
       // skill4 was used but only a month ago (not in past week)
       for (let i = 0; i < 5; i++) {
-        LogPulse.handle({
+        await LogPulse.handle({
           skill: 'skill4',
           ts: now - Random(604800, 2592000),
           outcome: 'success',
@@ -158,10 +158,10 @@ describe('Integration Scenarios', () => {
       // skill4 hasn't been used in a week
     });
 
-    it('should track outcome patterns for quality assessment', () => {
+    it('should track outcome patterns for quality assessment', async () => {
       // Skill with high error rate
       for (let i = 0; i < 10; i++) {
-        LogPulse.handle({
+        await LogPulse.handle({
           skill: 'buggy-skill',
           ts: Date.now() / 1000 - i * 100,
           outcome: i < 7 ? 'error' : 'success', // 70% error rate
@@ -170,7 +170,7 @@ describe('Integration Scenarios', () => {
 
       // Reliable skill
       for (let i = 0; i < 10; i++) {
-        LogPulse.handle({
+        await LogPulse.handle({
           skill: 'reliable-skill',
           ts: Date.now() / 1000 - i * 100,
           outcome: 'success',
@@ -197,14 +197,14 @@ describe('Integration Scenarios', () => {
   });
 
   describe('Time-Based Analysis', () => {
-    it('should compare usage across time periods', () => {
+    it('should compare usage across time periods', async () => {
       const now = Date.now() / 1000;
 
       // Old favorites (used a lot in the past month)
       const oldSkills = ['legacy-tool', 'old-helper'];
       for (const skill of oldSkills) {
         for (let i = 0; i < 50; i++) {
-          LogPulse.handle({
+          await LogPulse.handle({
             skill,
             ts: now - Random(604800, 2592000), // 1-4 weeks ago
             outcome: 'success',
@@ -216,7 +216,7 @@ describe('Integration Scenarios', () => {
       const newSkills = ['new-tool', 'modern-helper'];
       for (const skill of newSkills) {
         for (let i = 0; i < 30; i++) {
-          LogPulse.handle({
+          await LogPulse.handle({
             skill,
             ts: now - Random(0, 604800), // Past week
             outcome: 'success',
@@ -241,7 +241,7 @@ describe('Integration Scenarios', () => {
       assert.ok(monthTop.calls >= recentTop.calls);
     });
 
-    it('should detect trending skills', () => {
+    it('should detect trending skills', async () => {
       const now = Date.now() / 1000;
 
       // Trending: used more in last 24h than average
@@ -249,7 +249,7 @@ describe('Integration Scenarios', () => {
       // Base usage: 5 calls per day for past week
       for (let day = 1; day <= 6; day++) {
         for (let i = 0; i < 5; i++) {
-          LogPulse.handle({
+          await LogPulse.handle({
             skill: trendingSkill,
             ts: now - (day * 86400) - (i * 1000),
             outcome: 'success',
@@ -258,7 +258,7 @@ describe('Integration Scenarios', () => {
       }
       // Today: 20 calls
       for (let i = 0; i < 20; i++) {
-        LogPulse.handle({
+        await LogPulse.handle({
           skill: trendingSkill,
           ts: now - (i * 100),
           outcome: 'success',
@@ -269,7 +269,7 @@ describe('Integration Scenarios', () => {
       const steadySkill = 'reliable-tool';
       for (let day = 0; day <= 6; day++) {
         for (let i = 0; i < 10; i++) {
-          LogPulse.handle({
+          await LogPulse.handle({
             skill: steadySkill,
             ts: now - (day * 86400) - (i * 1000),
             outcome: 'success',
@@ -292,20 +292,20 @@ describe('Integration Scenarios', () => {
   });
 
   describe('Multi-Skill Session', () => {
-    it('should track a complex development session', () => {
+    it('should track a complex development session', async () => {
       const sessionStart = Date.now() / 1000;
 
       // Session: Debug a failing test
       // 1. Use /investigate to understand the issue
-      LogPulse.handle({ skill: 'investigate', outcome: 'success', ts: sessionStart });
+      await LogPulse.handle({ skill: 'investigate', outcome: 'success', ts: sessionStart });
 
       // 2. Try multiple fixes (some fail)
-      LogPulse.handle({ skill: 'freeze', outcome: 'success', ts: sessionStart + 10 });
-      LogPulse.handle({ skill: 'careful', outcome: 'success', ts: sessionStart + 20 });
-      LogPulse.handle({ skill: 'browse', outcome: 'error', ts: sessionStart + 30 }); // Test failed
-      LogPulse.handle({ skill: 'browse', outcome: 'success', ts: sessionStart + 40 }); // Retry passed
-      LogPulse.handle({ skill: 'qa', outcome: 'success', ts: sessionStart + 50 }); // Full QA pass
-      LogPulse.handle({ skill: 'review', outcome: 'success', ts: sessionStart + 60 }); // Review changes
+      await LogPulse.handle({ skill: 'freeze', outcome: 'success', ts: sessionStart + 10 });
+      await LogPulse.handle({ skill: 'careful', outcome: 'success', ts: sessionStart + 20 });
+      await LogPulse.handle({ skill: 'browse', outcome: 'error', ts: sessionStart + 30 }); // Test failed
+      await LogPulse.handle({ skill: 'browse', outcome: 'success', ts: sessionStart + 40 }); // Retry passed
+      await LogPulse.handle({ skill: 'qa', outcome: 'success', ts: sessionStart + 50 }); // Full QA pass
+      await LogPulse.handle({ skill: 'review', outcome: 'success', ts: sessionStart + 60 }); // Review changes
 
       // Analyze the session
       const stats = GetSkillStats.handle({ period: '7d' });
@@ -321,7 +321,7 @@ describe('Integration Scenarios', () => {
       assert.strictEqual(browseStats.success, 1);
     });
 
-    it('should handle concurrent skill usage patterns', () => {
+    it('should handle concurrent skill usage patterns', async () => {
       const now = Date.now() / 1000;
 
       // Simulate working on multiple features
@@ -333,7 +333,7 @@ describe('Integration Scenarios', () => {
         for (const skill of [...commonSkills, feature]) {
           const calls = Random(2, 5);
           for (let i = 0; i < calls; i++) {
-            LogPulse.handle({
+            await LogPulse.handle({
               skill,
               ts: now - Random(0, 86400),
               outcome: RandomOneOf(['success', 'success', 'success', 'error']),
@@ -362,7 +362,7 @@ describe('Integration Scenarios', () => {
 
       // Simulate existing file (before "upgrade")
       for (const entry of oldFormatEntries) {
-        Storage.appendEntry(entry);
+        Storage.appendEntrySync(entry);
       }
 
       // After "upgrade", new entries are added
@@ -371,7 +371,7 @@ describe('Integration Scenarios', () => {
       ];
 
       for (const entry of newFormatEntries) {
-        Storage.appendEntry(entry);
+        Storage.appendEntrySync(entry);
       }
 
       // Should read all entries regardless of format version
@@ -387,7 +387,7 @@ describe('Integration Scenarios', () => {
     it('should continue working after partial corruption', () => {
       // Write some valid entries
       for (let i = 0; i < 5; i++) {
-        Storage.appendEntry({
+        Storage.appendEntrySync({
           skill: `skill-${i}`,
           ts: Date.now() / 1000 - i,
           outcome: 'success',
@@ -399,7 +399,7 @@ describe('Integration Scenarios', () => {
 
       // Continue with valid entries
       for (let i = 5; i < 10; i++) {
-        Storage.appendEntry({
+        Storage.appendEntrySync({
           skill: `skill-${i}`,
           ts: Date.now() / 1000 - i,
           outcome: 'success',
@@ -417,7 +417,7 @@ describe('Integration Scenarios', () => {
       fs.rmSync(path.dirname(MOCK_ANALYTICS_FILE), { recursive: true, force: true });
 
       // Should recreate and work
-      Storage.appendEntry({
+      Storage.appendEntrySync({
         skill: 'test',
         ts: Date.now() / 1000,
         outcome: 'success',
@@ -462,7 +462,7 @@ describe('Integration Scenarios', () => {
       }
     });
 
-    it('should correlate usage with descriptions', () => {
+    it('should correlate usage with descriptions', async () => {
       // Setup skills
       const skills = [
         { name: 'frequently-used', desc: 'Used often' },
@@ -480,9 +480,9 @@ describe('Integration Scenarios', () => {
 
       // Use them unevenly
       for (let i = 0; i < 20; i++) {
-        LogPulse.handle({ skill: 'frequently-used', outcome: 'success' });
+        await LogPulse.handle({ skill: 'frequently-used', outcome: 'success' });
       }
-      LogPulse.handle({ skill: 'rarely-used', outcome: 'success' });
+      await LogPulse.handle({ skill: 'rarely-used', outcome: 'success' });
 
       // Get stats
       const stats = GetSkillStats.handle({ period: '7d' });

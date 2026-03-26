@@ -39,7 +39,9 @@ server.setRequestHandler('tools/call', async (request) => {
     throw new Error(`Unknown tool: ${name}`);
   }
 
-  return tool.handle(args);
+  // Support both sync and async handlers
+  const result = tool.handle(args);
+  return result instanceof Promise ? await result : result;
 });
 
 // Start server

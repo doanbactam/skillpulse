@@ -60,24 +60,26 @@ const THRESHOLDS = {
 };
 
 /**
- * Benchmark helper
+ * Benchmark helper - supports both sync and async functions
  */
 function bench(name, fn, threshold) {
-  const start = performance.now();
-  const result = fn();
-  const end = performance.now();
-  const duration = end - start;
+  return (async () => {
+    const start = performance.now();
+    const result = await fn();
+    const end = performance.now();
+    const duration = end - start;
 
-  // Only fail if significantly over threshold (2x)
-  const maxDuration = threshold * 2;
+    // Only fail if significantly over threshold (2x)
+    const maxDuration = threshold * 2;
 
-  if (duration > maxDuration) {
-    throw new Error(
-      `${name} exceeded threshold: ${duration.toFixed(2)}ms > ${maxDuration}ms`
-    );
-  }
+    if (duration > maxDuration) {
+      throw new Error(
+        `${name} exceeded threshold: ${duration.toFixed(2)}ms > ${maxDuration}ms`
+      );
+    }
 
-  return { duration, result };
+    return { duration, result };
+  })();
 }
 
 describe('Performance Benchmarks', () => {
@@ -85,10 +87,10 @@ describe('Performance Benchmarks', () => {
   afterEach(cleanupTestDir);
 
   describe('Write Performance', () => {
-    it('should append single entry quickly', () => {
-      const { duration } = bench(
+    it('should append single entry quickly', async () => {
+      const { duration } = await bench(
         'appendSingleEntry',
-        () => Storage.appendEntry({
+        () => Storage.appendEntrySync({
           skill: 'test',
           ts: Date.now() / 1000,
           outcome: 'success',
@@ -100,10 +102,10 @@ describe('Performance Benchmarks', () => {
       assert.ok(duration < THRESHOLDS.appendSingleEntry * 2);
     });
 
-    it('should append 100 entries efficiently', () => {
-      const { duration } = bench('append100Entries', () => {
+    it('should append 100 entries efficiently', async () => {
+      const { duration } = await bench('append100Entries', () => {
         for (let i = 0; i < 100; i++) {
-          Storage.appendEntry({
+          Storage.appendEntrySync({
             skill: `skill-${i % 10}`,
             ts: Date.now() / 1000 - i,
             outcome: 'success',
@@ -114,11 +116,11 @@ describe('Performance Benchmarks', () => {
       assert.ok(duration < THRESHOLDS.append100Entries * 2);
     });
 
-    it('should handle burst writes', () => {
+    it('should handle burst writes', async () => {
       const times = [];
       for (let i = 0; i < 50; i++) {
         const start = performance.now();
-        Storage.appendEntry({
+        Storage.appendEntrySync({
           skill: 'burst',
           ts: Date.now() / 1000 - i,
           outcome: 'success',
@@ -137,34 +139,34 @@ describe('Performance Benchmarks', () => {
   });
 
   describe('Read Performance', () => {
-    it('should read 100 entries quickly', () => {
+    it('should read 100 entries quickly', async () => {
       // Setup: write 100 entries
       for (let i = 0; i < 100; i++) {
-        Storage.appendEntry({
+        Storage.appendEntrySync({
           skill: `skill-${i % 10}`,
           ts: Date.now() / 1000 - i,
           outcome: 'success',
         });
       }
 
-      const { duration } = bench('read100Entries', () => {
+      const { duration } = await bench('read100Entries', () => {
         return [...Storage.readEntriesSince(0)];
       }, THRESHOLDS.read100Entries);
 
       assert.ok(duration < THRESHOLDS.read100Entries * 2);
     });
 
-    it('should read 1000 entries efficiently', () => {
+    it('should read 1000 entries efficiently', async () => {
       // Setup: write 1000 entries
       for (let i = 0; i < 1000; i++) {
-        Storage.appendEntry({
+        Storage.appendEntrySync({
           skill: `skill-${i % 50}`,
           ts: Date.now() / 1000 - i,
           outcome: 'success',
         });
       }
 
-      const { duration, result } = bench('read1000Entries', () => {
+      const { duration, result } = await bench('read1000Entries', () => {
         return [...Storage.readEntriesSince(0)];
       }, THRESHOLDS.read1000Entries);
 
@@ -172,20 +174,20 @@ describe('Performance Benchmarks', () => {
       assert.ok(duration < THRESHOLDS.read1000Entries * 2);
     });
 
-    it('should filter entries by cutoff efficiently', () => {
+    it('should filter entries by cutoff efficiently', async () => {
       const now = Date.now() / 1000;
       const weekAgo = now - 604800;
 
       // Write entries spanning 2 weeks
       for (let i = 0; i < 2000; i++) {
-        Storage.appendEntry({
+        Storage.appendEntrySync({
           skill: `skill-${i % 20}`,
           ts: now - (i * 600), // Spread over 2 weeks
           outcome: 'success',
         });
       }
 
-      const { duration, result } = bench('filterByCutoff', () => {
+      const { duration, result } = await bench('filterByCutoff', () => {
         return [...Storage.readEntriesSince(weekAgo)];
       }, THRESHOLDS.read1000Entries);
 
@@ -196,9 +198,9 @@ describe('Performance Benchmarks', () => {
   });
 
   describe('Aggregation Performance', () => {
-    it('should aggregate 100 entries quickly', () => {
+    it('should aggregate 100 entries quickly', async () => {
       for (let i = 0; i < 100; i++) {
-        Storage.appendEntry({
+        Storage.appendEntrySync({
           skill: `skill-${i % 10}`,
           ts: Date.now() / 1000 - i,
           outcome: ['success', 'error', 'abort'][i % 3],
@@ -206,16 +208,16 @@ describe('Performance Benchmarks', () => {
       }
 
       const entries = [...Storage.readEntriesSince(0)];
-      const { duration } = bench('aggregate100', () => {
+      const { duration } = await bench('aggregate100', () => {
         return Storage.aggregateStats(entries);
       }, THRESHOLDS.aggregate100);
 
       assert.ok(duration < THRESHOLDS.aggregate100 * 2);
     });
 
-    it('should aggregate 1000 entries efficiently', () => {
+    it('should aggregate 1000 entries efficiently', async () => {
       for (let i = 0; i < 1000; i++) {
-        Storage.appendEntry({
+        Storage.appendEntrySync({
           skill: `skill-${i % 50}`,
           ts: Date.now() / 1000 - i,
           outcome: ['success', 'error', 'abort'][i % 3],
@@ -223,7 +225,7 @@ describe('Performance Benchmarks', () => {
       }
 
       const entries = [...Storage.readEntriesSince(0)];
-      const { duration, result } = bench('aggregate1000', () => {
+      const { duration, result } = await bench('aggregate1000', () => {
         return Storage.aggregateStats(entries);
       }, THRESHOLDS.aggregate1000);
 
@@ -231,10 +233,10 @@ describe('Performance Benchmarks', () => {
       assert.ok(duration < THRESHOLDS.aggregate1000 * 2);
     });
 
-    it('should aggregate many different skills efficiently', () => {
+    it('should aggregate many different skills efficiently', async () => {
       const skillCount = 500;
       for (let i = 0; i < skillCount; i++) {
-        Storage.appendEntry({
+        Storage.appendEntrySync({
           skill: `skill-${i}`,
           ts: Date.now() / 1000 - i,
           outcome: 'success',
@@ -242,7 +244,7 @@ describe('Performance Benchmarks', () => {
       }
 
       const entries = [...Storage.readEntriesSince(0)];
-      const { duration } = bench('aggregateManySkills', () => {
+      const { duration } = await bench('aggregateManySkills', () => {
         return Storage.aggregateStats(entries);
       }, THRESHOLDS.aggregate1000);
 
@@ -251,9 +253,9 @@ describe('Performance Benchmarks', () => {
   });
 
   describe('Handler Performance', () => {
-    it('should handle log_pulse quickly', () => {
-      const { duration } = bench('logPulseHandler', () => {
-        return LogPulse.handle({
+    it('should handle log_pulse quickly', async () => {
+      const { duration } = await bench('logPulseHandler', async () => {
+        return await LogPulse.handle({
           skill: 'test-skill',
           outcome: 'success',
         });
@@ -262,32 +264,32 @@ describe('Performance Benchmarks', () => {
       assert.ok(duration < THRESHOLDS.logPulseHandler * 2);
     });
 
-    it('should handle get_skill_stats with 100 entries', () => {
+    it('should handle get_skill_stats with 100 entries', async () => {
       for (let i = 0; i < 100; i++) {
-        Storage.appendEntry({
+        Storage.appendEntrySync({
           skill: `skill-${i % 10}`,
           ts: Date.now() / 1000 - i,
           outcome: 'success',
         });
       }
 
-      const { duration } = bench('getStatsHandler100', () => {
+      const { duration } = await bench('getStatsHandler100', () => {
         return GetSkillStats.handle({ period: '7d' });
       }, THRESHOLDS.getStatsHandler100);
 
       assert.ok(duration < THRESHOLDS.getStatsHandler100 * 2);
     });
 
-    it('should handle get_skill_stats with 1000 entries', () => {
+    it('should handle get_skill_stats with 1000 entries', async () => {
       for (let i = 0; i < 1000; i++) {
-        Storage.appendEntry({
+        Storage.appendEntrySync({
           skill: `skill-${i % 50}`,
           ts: Date.now() / 1000 - i,
           outcome: 'success',
         });
       }
 
-      const { duration, result } = bench('getStatsHandler1000', () => {
+      const { duration, result } = await bench('getStatsHandler1000', () => {
         return GetSkillStats.handle({ period: '7d' });
       }, THRESHOLDS.getStatsHandler1000);
 
@@ -296,14 +298,14 @@ describe('Performance Benchmarks', () => {
       assert.ok(duration < THRESHOLDS.getStatsHandler1000 * 2);
     });
 
-    it('should sort stats efficiently', () => {
+    it('should sort stats efficiently', async () => {
       // Create entries that need sorting
       const skills = ['a', 'b', 'c', 'd', 'e'];
       const counts = [10, 50, 30, 100, 20];
 
       for (let i = 0; i < skills.length; i++) {
         for (let j = 0; j < counts[i]; j++) {
-          Storage.appendEntry({
+          Storage.appendEntrySync({
             skill: skills[i],
             ts: Date.now() / 1000 - (i * 1000 + j),
             outcome: 'success',
@@ -311,7 +313,7 @@ describe('Performance Benchmarks', () => {
         }
       }
 
-      const { duration, result } = bench('sortedStats', () => {
+      const { duration, result } = await bench('sortedStats', () => {
         return GetSkillStats.handle({ period: '7d' });
       }, THRESHOLDS.getStatsHandler100);
 
@@ -327,7 +329,7 @@ describe('Performance Benchmarks', () => {
   });
 
   describe('List Skills Performance', () => {
-    it('should list 100 skills quickly', () => {
+    it('should list 100 skills quickly', async () => {
       for (let i = 0; i < 100; i++) {
         const skillDir = path.join(MOCK_SKILLS_DIR, `skill-${i}`);
         fs.mkdirSync(skillDir);
@@ -337,7 +339,7 @@ describe('Performance Benchmarks', () => {
         );
       }
 
-      const { duration, result } = bench('listSkills100', () => {
+      const { duration, result } = await bench('listSkills100', () => {
         return [...Storage.listInstalledSkills()];
       }, THRESHOLDS.listSkills100);
 
@@ -345,7 +347,7 @@ describe('Performance Benchmarks', () => {
       assert.ok(duration < THRESHOLDS.listSkills100 * 2);
     });
 
-    it('should read skill description quickly', () => {
+    it('should read skill description quickly', async () => {
       const skillDir = path.join(MOCK_SKILLS_DIR, 'test-skill');
       fs.mkdirSync(skillDir);
       fs.writeFileSync(
@@ -353,7 +355,7 @@ describe('Performance Benchmarks', () => {
         '---\ndescription:\nTest description for performance testing\n---\n'
       );
 
-      const { duration } = bench('readDescription', () => {
+      const { duration } = await bench('readDescription', () => {
         return Storage.readSkillDescription('test-skill');
       }, THRESHOLDS.readDescription);
 
@@ -362,10 +364,10 @@ describe('Performance Benchmarks', () => {
   });
 
   describe('Memory Efficiency', () => {
-    it('should not leak memory when reading large datasets', () => {
+    it('should not leak memory when reading large datasets', async () => {
       // Write 5000 entries
       for (let i = 0; i < 5000; i++) {
-        Storage.appendEntry({
+        Storage.appendEntrySync({
           skill: `skill-${i % 100}`,
           ts: Date.now() / 1000 - i,
           outcome: 'success',
@@ -382,11 +384,11 @@ describe('Performance Benchmarks', () => {
       assert.ok(true);
     });
 
-    it('should handle aggregation without excessive memory', () => {
+    it('should handle aggregation without excessive memory', async () => {
       // Create many different skills
       const skillCount = 1000;
       for (let i = 0; i < skillCount; i++) {
-        Storage.appendEntry({
+        Storage.appendEntrySync({
           skill: `skill-${i}`,
           ts: Date.now() / 1000 - i,
           outcome: 'success',
@@ -407,21 +409,21 @@ describe('Performance Benchmarks', () => {
   });
 
   describe('Period Performance', () => {
-    it('should resolve periods quickly', () => {
+    it('should resolve periods quickly', async () => {
       const periods = ['24h', '7d', '30d', 'all', 'today', 'week', 'month', 'ever'];
 
-      const { duration } = bench('resolvePeriods', () => {
+      const { duration } = await bench('resolvePeriods', () => {
         return periods.map(p => getPeriod(p));
       }, 10); // Should be very fast
 
       assert.ok(duration < 10);
     });
 
-    it('should calculate cutoffs efficiently', () => {
+    it('should calculate cutoffs efficiently', async () => {
       const now = Date.now() / 1000;
       const periods = ['24h', '7d', '30d', 'all'].map(p => getPeriod(p));
 
-      const { duration } = bench('calculateCutoffs', () => {
+      const { duration } = await bench('calculateCutoffs', () => {
         return periods.map(p => p.cutoff(now));
       }, 10);
 
@@ -430,12 +432,12 @@ describe('Performance Benchmarks', () => {
   });
 
   describe('Concurrent Operations', () => {
-    it('should handle rapid sequential writes', () => {
+    it('should handle rapid sequential writes', async () => {
       const count = 500;
       const start = performance.now();
 
       for (let i = 0; i < count; i++) {
-        Storage.appendEntry({
+        Storage.appendEntrySync({
           skill: 'rapid',
           ts: Date.now() / 1000 - i,
           outcome: 'success',
@@ -449,10 +451,10 @@ describe('Performance Benchmarks', () => {
       assert.ok(avgTime < 10, `Average write time ${avgTime.toFixed(2)}ms exceeds 10ms`);
     });
 
-    it('should handle read-modify-write cycles', () => {
+    it('should handle read-modify-write cycles', async () => {
       // Write initial data
       for (let i = 0; i < 100; i++) {
-        Storage.appendEntry({
+        Storage.appendEntrySync({
           skill: 'cycle',
           ts: Date.now() / 1000 - i,
           outcome: 'success',
@@ -467,7 +469,7 @@ describe('Performance Benchmarks', () => {
         const stats = Storage.aggregateStats(entries);
 
         // Write based on stats
-        Storage.appendEntry({
+        Storage.appendEntrySync({
           skill: 'cycle',
           ts: Date.now() / 1000,
           outcome: 'success',

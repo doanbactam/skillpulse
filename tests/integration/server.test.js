@@ -95,11 +95,11 @@ describe('MCP Server Integration', () => {
   });
 
   describe('Tool Call Handling', () => {
-    it('should handle log_pulse tool call', () => {
+    it('should handle log_pulse tool call', async () => {
       const tool = Tools.find(t => t.name === 'log_pulse');
       assert.ok(tool);
 
-      const result = tool.handle({ skill: 'test-skill', outcome: 'success' });
+      const result = await tool.handle({ skill: 'test-skill', outcome: 'success' });
 
       assert.strictEqual(result.content[0].type, 'text');
       assert.ok(result.content[0].text.includes('test-skill'));
@@ -117,7 +117,7 @@ describe('MCP Server Integration', () => {
 
       // Add some test data
       const now = Math.floor(Date.now() / 1000);
-      Storage.appendEntry({ skill: 'test', ts: now - 1000, outcome: 'success' });
+      Storage.appendEntrySync({ skill: 'test', ts: now - 1000, outcome: 'success' });
 
       const result = tool.handle({ period: '7d' });
 
@@ -141,11 +141,12 @@ describe('MCP Server Integration', () => {
       assert.ok(data.some(s => s.name === 'test-skill'));
     });
 
-    it('should return error for unknown tool name', () => {
+    it('should return error for unknown tool name', async () => {
       const tool = Tools.find(t => t.name === 'log_pulse');
 
       // Valid tool should work
-      assert.doesNotThrow(() => tool.handle({ skill: 'test' }));
+      await tool.handle({ skill: 'test' });
+      assert.ok(true);
 
       // But if we tried to call a non-existent tool, it would throw
       // (This is tested implicitly by the tools/find logic in the server)
@@ -153,7 +154,7 @@ describe('MCP Server Integration', () => {
   });
 
   describe('End-to-End Workflows', () => {
-    it('should complete full analytics workflow', () => {
+    it('should complete full analytics workflow', async () => {
       const logTool = Tools.find(t => t.name === 'log_pulse');
       const statsTool = Tools.find(t => t.name === 'get_skill_stats');
       const listTool = Tools.find(t => t.name === 'list_skills');
@@ -167,7 +168,7 @@ describe('MCP Server Integration', () => {
       assert.strictEqual(skills.length, 2);
 
       // 2. Log usage for skill-a
-      result = logTool.handle({ skill: 'skill-a', outcome: 'success' });
+      result = await await logTool.handle({ skill: 'skill-a', outcome: 'success' });
       assert.ok(result.content[0].text.includes('skill-a'));
 
       // 3. Get stats showing skill-a was used
@@ -177,8 +178,8 @@ describe('MCP Server Integration', () => {
       assert.strictEqual(stats.stats[0].skill, 'skill-a');
 
       // 4. Log more usage
-      logTool.handle({ skill: 'skill-a', outcome: 'success' });
-      logTool.handle({ skill: 'skill-b', outcome: 'error' });
+      await logTool.handle({ skill: 'skill-a', outcome: 'success' });
+      await logTool.handle({ skill: 'skill-b', outcome: 'error' });
 
       // 5. Get updated stats
       result = statsTool.handle({ period: '7d' });
@@ -200,8 +201,8 @@ describe('MCP Server Integration', () => {
       const now = Math.floor(Date.now() / 1000);
 
       // Log entries at different times
-      Storage.appendEntry({ skill: 'old-skill', ts: now - 200_000, outcome: 'success' }); // ~2 days ago
-      Storage.appendEntry({ skill: 'new-skill', ts: now - 1000, outcome: 'success' }); // 16 minutes ago
+      Storage.appendEntrySync({ skill: 'old-skill', ts: now - 200_000, outcome: 'success' }); // ~2 days ago
+      Storage.appendEntrySync({ skill: 'new-skill', ts: now - 1000, outcome: 'success' }); // 16 minutes ago
 
       // 24h period should only show new-skill
       let result = statsTool.handle({ period: '24h' });
@@ -222,22 +223,20 @@ describe('MCP Server Integration', () => {
   });
 
   describe('Error Handling', () => {
-    it('should handle missing skill parameter gracefully', () => {
+    it('should handle missing skill parameter gracefully', async () => {
       const tool = Tools.find(t => t.name === 'log_pulse');
 
-      // Schema requires skill, but handler doesn't validate directly
-      // (validation happens at MCP layer before handler is called)
-      // When called without skill, it uses undefined which becomes valid JSON
-      const result = tool.handle({});
-
-      // Should log with undefined skill name
-      assert.strictEqual(result.content[0].type, 'text');
+      // Handler now validates skill parameter
+      await assert.rejects(
+        () => tool.handle({}),
+        /Invalid skill name: must be a non-empty string/
+      );
     });
 
-    it('should default outcome to success when not provided', () => {
+    it('should default outcome to success when not provided', async () => {
       const tool = Tools.find(t => t.name === 'log_pulse');
 
-      tool.handle({ skill: 'test' });
+      await tool.handle({ skill: 'test' });
 
       const content = fs.readFileSync(MOCK_ANALYTICS_FILE, 'utf-8');
       const entry = JSON.parse(content.trim());
@@ -257,12 +256,12 @@ describe('MCP Server Integration', () => {
   });
 
   describe('Concurrent Access', () => {
-    it('should handle multiple rapid log entries', () => {
+    it('should handle multiple rapid log entries', async () => {
       const tool = Tools.find(t => t.name === 'log_pulse');
 
       // Log 100 entries rapidly
       for (let i = 0; i < 100; i++) {
-        tool.handle({ skill: `skill-${i % 5}`, outcome: 'success' });
+        await tool.handle({ skill: `skill-${i % 5}`, outcome: 'success' });
       }
 
       // Verify all entries were written
@@ -286,14 +285,14 @@ describe('MCP Server Integration', () => {
   });
 
   describe('Data Persistence', () => {
-    it('should persist data across handler calls', () => {
+    it('should persist data across handler calls', async () => {
       const logTool = Tools.find(t => t.name === 'log_pulse');
       const statsTool = Tools.find(t => t.name === 'get_skill_stats');
 
       // Log some entries
-      logTool.handle({ skill: 'skill1', outcome: 'success' });
-      logTool.handle({ skill: 'skill1', outcome: 'success' });
-      logTool.handle({ skill: 'skill2', outcome: 'error' });
+      await logTool.handle({ skill: 'skill1', outcome: 'success' });
+      await logTool.handle({ skill: 'skill1', outcome: 'success' });
+      await logTool.handle({ skill: 'skill2', outcome: 'error' });
 
       // Check stats
       let result = statsTool.handle({ period: '7d' });
@@ -301,7 +300,7 @@ describe('MCP Server Integration', () => {
       assert.strictEqual(stats.stats.length, 2);
 
       // Log more entries
-      logTool.handle({ skill: 'skill3', outcome: 'abort' });
+      await logTool.handle({ skill: 'skill3', outcome: 'abort' });
 
       // Check stats again - should include new entry
       result = statsTool.handle({ period: '7d' });

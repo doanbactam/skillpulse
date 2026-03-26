@@ -49,8 +49,8 @@ describe('MCP Tool Handlers', () => {
       assert.deepStrictEqual(LogPulse.schema.required, ['skill']);
     });
 
-    it('should log skill usage with default outcome', () => {
-      const result = LogPulse.handle({ skill: 'test-skill' });
+    it('should log skill usage with default outcome', async () => {
+      const result = await LogPulse.handle({ skill: 'test-skill' });
 
       assert.strictEqual(result.content[0].type, 'text');
       assert.ok(result.content[0].text.includes('test-skill'));
@@ -62,8 +62,8 @@ describe('MCP Tool Handlers', () => {
       assert.strictEqual(entry.outcome, 'success');
     });
 
-    it('should log skill usage with success outcome', () => {
-      const result = LogPulse.handle({ skill: 'test-skill', outcome: 'success' });
+    it('should log skill usage with success outcome', async () => {
+      const result = await LogPulse.handle({ skill: 'test-skill', outcome: 'success' });
 
       const content = fs.readFileSync(MOCK_ANALYTICS_FILE, 'utf-8');
       const entry = JSON.parse(content.trim());
@@ -71,8 +71,8 @@ describe('MCP Tool Handlers', () => {
       assert.strictEqual(entry.outcome, 'success');
     });
 
-    it('should log skill usage with error outcome', () => {
-      LogPulse.handle({ skill: 'failing-skill', outcome: 'error' });
+    it('should log skill usage with error outcome', async () => {
+      await LogPulse.handle({ skill: 'failing-skill', outcome: 'error' });
 
       const content = fs.readFileSync(MOCK_ANALYTICS_FILE, 'utf-8');
       const entry = JSON.parse(content.trim());
@@ -80,15 +80,15 @@ describe('MCP Tool Handlers', () => {
       assert.strictEqual(entry.outcome, 'error');
     });
 
-    it('should log skill usage with abort outcome', () => {
-      LogPulse.handle({ skill: 'aborted-skill', outcome: 'abort' });
+    it('should log skill usage with abort outcome', async () => {
+      await LogPulse.handle({ skill: 'aborted-skill', outcome: 'abort' });
 
       const content = fs.readFileSync(MOCK_ANALYTICS_FILE, 'utf-8');
       const entry = JSON.parse(content.trim());
       assert.strictEqual(entry.outcome, 'abort');
     });
 
-    it('should include timestamp in entry', () => {
+    it('should include timestamp in entry', async () => {
       const before = Math.floor(Date.now() / 1000);
       LogPulse.handle({ skill: 'test' });
       const after = Math.floor(Date.now() / 1000);
@@ -98,7 +98,7 @@ describe('MCP Tool Handlers', () => {
       assert.ok(entry.ts >= before && entry.ts <= after);
     });
 
-    it('should include process ID in entry', () => {
+    it('should include process ID in entry', async () => {
       LogPulse.handle({ skill: 'test' });
 
       const content = fs.readFileSync(MOCK_ANALYTICS_FILE, 'utf-8');
@@ -129,7 +129,7 @@ describe('MCP Tool Handlers', () => {
     it('should return stats for period 7d', () => {
       const now = Math.floor(Date.now() / 1000);
       const entry = { skill: 'test', ts: now - 1000, outcome: 'success' };
-      Storage.appendEntry(entry);
+      Storage.appendEntrySync(entry);
 
       const result = GetSkillStats.handle({ period: '7d' });
 
@@ -141,8 +141,8 @@ describe('MCP Tool Handlers', () => {
 
     it('should filter entries by period 24h', () => {
       const now = Math.floor(Date.now() / 1000);
-      Storage.appendEntry({ skill: 'recent', ts: now - 3600, outcome: 'success' });
-      Storage.appendEntry({ skill: 'old', ts: now - 100_000, outcome: 'success' });
+      Storage.appendEntrySync({ skill: 'recent', ts: now - 3600, outcome: 'success' });
+      Storage.appendEntrySync({ skill: 'old', ts: now - 100_000, outcome: 'success' });
 
       const result = GetSkillStats.handle({ period: '24h' });
 
@@ -153,8 +153,8 @@ describe('MCP Tool Handlers', () => {
 
     it('should include all entries for period all', () => {
       const now = Math.floor(Date.now() / 1000);
-      Storage.appendEntry({ skill: 'old', ts: now - 10_000_000, outcome: 'success' });
-      Storage.appendEntry({ skill: 'new', ts: now - 1000, outcome: 'success' });
+      Storage.appendEntrySync({ skill: 'old', ts: now - 10_000_000, outcome: 'success' });
+      Storage.appendEntrySync({ skill: 'new', ts: now - 1000, outcome: 'success' });
 
       const result = GetSkillStats.handle({ period: 'all' });
 
@@ -172,10 +172,10 @@ describe('MCP Tool Handlers', () => {
     it('should sort stats by call count descending', () => {
       const now = Math.floor(Date.now() / 1000);
       for (let i = 0; i < 5; i++) {
-        Storage.appendEntry({ skill: 'skill1', ts: now - i * 100, outcome: 'success' });
+        Storage.appendEntrySync({ skill: 'skill1', ts: now - i * 100, outcome: 'success' });
       }
       for (let i = 0; i < 2; i++) {
-        Storage.appendEntry({ skill: 'skill2', ts: now - i * 100, outcome: 'success' });
+        Storage.appendEntrySync({ skill: 'skill2', ts: now - i * 100, outcome: 'success' });
       }
 
       const result = GetSkillStats.handle({ period: '7d' });
@@ -189,9 +189,9 @@ describe('MCP Tool Handlers', () => {
 
     it('should include outcome counts', () => {
       const now = Math.floor(Date.now() / 1000);
-      Storage.appendEntry({ skill: 'test', ts: now - 1000, outcome: 'success' });
-      Storage.appendEntry({ skill: 'test', ts: now - 2000, outcome: 'error' });
-      Storage.appendEntry({ skill: 'test', ts: now - 3000, outcome: 'abort' });
+      Storage.appendEntrySync({ skill: 'test', ts: now - 1000, outcome: 'success' });
+      Storage.appendEntrySync({ skill: 'test', ts: now - 2000, outcome: 'error' });
+      Storage.appendEntrySync({ skill: 'test', ts: now - 3000, outcome: 'abort' });
 
       const result = GetSkillStats.handle({ period: '7d' });
 

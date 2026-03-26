@@ -30,8 +30,6 @@ The server runs on stdio and exposes three tools:
 | `get_skill_stats` | Query usage stats by period (24h/7d/30d/all) |
 | `list_skills` | Enumerate installed skills from `~/.claude/skills/` |
 
-**Note:** There's a mismatch in the code: `tools/list` defines `log_pulse` but `tools/call` handles `log_skill_usage`. This should be unified.
-
 ### Pulse Skill (`skills/pulse/`)
 - `SKILL.md` — Skill metadata and documentation
 - `skill.json` — Package metadata

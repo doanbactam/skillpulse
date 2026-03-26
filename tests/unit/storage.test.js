@@ -66,7 +66,7 @@ describe('Storage Layer', () => {
         pid: 12345,
       };
 
-      Storage.appendEntry(entry);
+      Storage.appendEntrySync(entry);
 
       assert.ok(fs.existsSync(MOCK_ANALYTICS_FILE));
       const content = fs.readFileSync(MOCK_ANALYTICS_FILE, 'utf-8');
@@ -77,8 +77,8 @@ describe('Storage Layer', () => {
       const entry1 = { skill: 'skill1', ts: 1000, outcome: 'success' };
       const entry2 = { skill: 'skill2', ts: 2000, outcome: 'error' };
 
-      Storage.appendEntry(entry1);
-      Storage.appendEntry(entry2);
+      Storage.appendEntrySync(entry1);
+      Storage.appendEntrySync(entry2);
 
       const content = fs.readFileSync(MOCK_ANALYTICS_FILE, 'utf-8');
       const lines = content.trim().split('\n');
@@ -92,7 +92,7 @@ describe('Storage Layer', () => {
       fs.rmSync(analyticsDir, { recursive: true, force: true });
 
       const entry = { skill: 'test', ts: 1000, outcome: 'success' };
-      Storage.appendEntry(entry);
+      Storage.appendEntrySync(entry);
 
       assert.ok(fs.existsSync(MOCK_ANALYTICS_FILE));
     });
@@ -109,8 +109,8 @@ describe('Storage Layer', () => {
       const oldEntry = { skill: 'old', ts: now - 10000, outcome: 'success' };
       const newEntry = { skill: 'new', ts: now - 100, outcome: 'success' };
 
-      Storage.appendEntry(oldEntry);
-      Storage.appendEntry(newEntry);
+      Storage.appendEntrySync(oldEntry);
+      Storage.appendEntrySync(newEntry);
 
       const cutoff = now - 5000;
       const entries = [...Storage.readEntriesSince(cutoff)];
@@ -123,7 +123,7 @@ describe('Storage Layer', () => {
       const now = Date.now() / 1000;
       const entry = { skill: 'test', ts: now, outcome: 'success' };
 
-      Storage.appendEntry(entry);
+      Storage.appendEntrySync(entry);
 
       const entries = [...Storage.readEntriesSince(now)];
 

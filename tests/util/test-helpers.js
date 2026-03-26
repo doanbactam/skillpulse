@@ -96,7 +96,7 @@ export class TestEnvironment {
         outcome: entry.outcome ?? 'success',
         pid: entry.pid ?? process.pid,
       };
-      Storage.appendEntry(normalized);
+      Storage.appendEntrySync(normalized);
     }
   }
 

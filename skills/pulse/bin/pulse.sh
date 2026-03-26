@@ -34,8 +34,8 @@ LABEL=$(echo "$RESULT" | tail -1)
 # Ensure analytics directory exists
 mkdir -p "$(dirname "$ANALYTICS_FILE")"
 
-# Count total skills
-TOTAL_SKILLS=$(ls -A "$SKILLS_DIR" 2>/dev/null | wc -l)
+# Count total skills (directories only, not files like pulse.jsonl)
+TOTAL_SKILLS=$(find "$SKILLS_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
 
 # Get usage data within period (single-pass awk)
 USAGE_DATA=$(awk -v cutoff="$CUTOFF" '

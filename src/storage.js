@@ -6,6 +6,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import lockfile from 'proper-lockfile';
 
 // Default paths (can be overridden via setPaths for testing)
 let _analyticsFile = path.join(os.homedir(), '.claude', 'skills', 'pulse.jsonl');
@@ -38,13 +39,56 @@ export function getSkillsPath() { return _skillsDir; }
 
 // Ensure directory exists (idempotent)
 export function ensureStorage() {
-  fs.mkdirSync(path.dirname(_analyticsFile), { recursive: true });
+  try {
+    fs.mkdirSync(path.dirname(_analyticsFile), { recursive: true });
+  } catch (error) {
+    // If directory creation fails, we can't continue
+    throw new Error(`Failed to create storage directory: ${error.message}`);
+  }
 }
 
-// Append a single entry
-export function appendEntry(entry) {
-  ensureStorage();
-  fs.appendFileSync(_analyticsFile, JSON.stringify(entry) + '\n');
+// Append a single entry with error handling and file locking
+export async function appendEntry(entry) {
+  try {
+    ensureStorage();
+    const line = JSON.stringify(entry) + '\n';
+
+    // Ensure file exists before locking (required by proper-lockfile)
+    if (!fs.existsSync(_analyticsFile)) {
+      fs.writeFileSync(_analyticsFile, '', 'utf8');
+    }
+
+    // Acquire lock with timeout to prevent deadlocks
+    const release = await lockfile.lock(_analyticsFile, {
+      retries: {
+        retries: 5,
+        minTimeout: 50,
+        maxTimeout: 200,
+      },
+    });
+
+    try {
+      fs.appendFileSync(_analyticsFile, line, 'utf8');
+    } finally {
+      await release();
+    }
+  } catch (error) {
+    // Log error but don't crash the server
+    console.error(`Failed to append entry to analytics file: ${error.message}`);
+    throw new Error(`Failed to log skill usage: ${error.message}`);
+  }
+}
+
+// Synchronous wrapper for backward compatibility (used by handlers)
+export function appendEntrySync(entry) {
+  try {
+    ensureStorage();
+    const line = JSON.stringify(entry) + '\n';
+    fs.appendFileSync(_analyticsFile, line, 'utf8');
+  } catch (error) {
+    console.error(`Failed to append entry to analytics file: ${error.message}`);
+    throw new Error(`Failed to log skill usage: ${error.message}`);
+  }
 }
 
 // Read entries within time range
@@ -99,9 +143,18 @@ export function readSkillDescription(skillName) {
   const skillFile = path.join(_skillsDir, skillName, 'SKILL.md');
   try {
     const content = fs.readFileSync(skillFile, 'utf-8');
-    const match = content.match(/^description:\s*\n([\s\S]*?)(?=\n---|\nallowed-tools:|$)/m);
+    // Try multiple patterns for different frontmatter formats
+    // Pattern 1: description: "text" or description: 'text'
+    let match = content.match(/^description:\s*["']([^"']+)["']/m);
     if (match) {
-      return match[1].trim().split('\n')[0].substring(0, 80);
+      const desc = match[1].trim().substring(0, 80);
+      if (desc && desc !== '---' && desc !== '...') return desc;
+    }
+    // Pattern 2: description: followed by multiline content
+    match = content.match(/^description:\s*\n([\s\S]*?)(?=\n---|\nallowed-tools:|name:|type:|$)/m);
+    if (match) {
+      const desc = match[1].trim().split('\n')[0].substring(0, 80);
+      if (desc && desc !== '---' && desc !== '...') return desc;
     }
   } catch {
     // File doesn't exist or can't be read
