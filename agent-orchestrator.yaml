@@ -1,0 +1,9 @@
+# Agent Orchestrator Config for skillpulse
+
+projects:
+  skillpulse:
+    name: SkillPulse
+    repo: doanbactam/skillpulse
+    path: .
+    defaultBranch: main
+    sessionPrefix: sp

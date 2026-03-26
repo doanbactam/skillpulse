@@ -6,6 +6,45 @@
 import * as Storage from './storage.js';
 import { getPeriod } from './periods.js';
 
+// Rate limiting configuration
+const RATE_LIMIT = {
+  maxLogsPerMinute: 100,
+  windowMs: 60 * 1000, // 1 minute
+};
+
+// In-memory rate limiter (reset per process)
+const rateLimiter = new Map();
+
+/**
+ * Check rate limit for a given process ID
+ * @returns {boolean} true if rate limit exceeded
+ */
+function checkRateLimit(pid) {
+  const now = Date.now();
+  const windowStart = now - RATE_LIMIT.windowMs;
+
+  // Get or initialize rate limit data for this PID
+  let data = rateLimiter.get(pid);
+  if (!data) {
+    data = { count: 0, resetAt: now + RATE_LIMIT.windowMs };
+    rateLimiter.set(pid, data);
+  }
+
+  // Reset window if expired
+  if (now > data.resetAt) {
+    data.count = 0;
+    data.resetAt = now + RATE_LIMIT.windowMs;
+  }
+
+  // Check and increment
+  if (data.count >= RATE_LIMIT.maxLogsPerMinute) {
+    return true; // Rate limit exceeded
+  }
+
+  data.count++;
+  return false;
+}
+
 // Log pulse tool
 export const LogPulse = {
   name: 'log_pulse',
@@ -24,6 +63,11 @@ export const LogPulse = {
   },
   async handle(args) {
     const { skill, outcome = 'success' } = args;
+
+    // Rate limiting check
+    if (checkRateLimit(process.pid)) {
+      throw new Error(`Rate limit exceeded: maximum ${RATE_LIMIT.maxLogsPerMinute} logs per minute`);
+    }
 
     // Input validation
     if (!skill || typeof skill !== 'string' || !skill.trim()) {

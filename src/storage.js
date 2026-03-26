@@ -12,6 +12,16 @@ import lockfile from 'proper-lockfile';
 let _analyticsFile = path.join(os.homedir(), '.claude', 'skills', 'pulse.jsonl');
 let _skillsDir = path.join(os.homedir(), '.claude', 'skills');
 
+// Data retention configuration
+const RETENTION_CONFIG = {
+  maxAgeDays: 90, // Keep entries for 90 days by default
+  maxEntries: 100000, // Maximum entries to keep (safety limit)
+  cleanupInterval: 100, // Run cleanup every N writes
+};
+
+// Write counter for periodic cleanup
+let _writeCounter = 0;
+
 export const ANALYTICS_FILE = new Proxy({}, {
   get() { return _analyticsFile; },
   set(_, v) { _analyticsFile = v; return true; }
@@ -47,6 +57,78 @@ export function ensureStorage() {
   }
 }
 
+/**
+ * Clean up old entries based on retention policy
+ * Removes entries older than maxAgeDays or keeps only maxEntries most recent
+ */
+export function cleanupOldEntries() {
+  try {
+    if (!fs.existsSync(_analyticsFile)) return;
+
+    const content = fs.readFileSync(_analyticsFile, 'utf-8');
+    const lines = content.split('\n').filter(line => line.trim());
+
+    const now = Math.floor(Date.now() / 1000);
+    const maxAge = RETENTION_CONFIG.maxAgeDays * 86400; // Convert days to seconds
+    const cutoff = now - maxAge;
+
+    // Filter entries: keep if recent or if we need to maintain maxEntries
+    const entries = [];
+    for (const line of lines) {
+      try {
+        const entry = JSON.parse(line);
+        entries.push(entry);
+      } catch {
+        // Skip malformed entries
+      }
+    }
+
+    // Sort by timestamp descending (newest first)
+    entries.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+
+    // Keep entries that are either recent enough or within maxEntries limit
+    const filtered = entries.filter((entry, index) =>
+      (entry.ts || 0) >= cutoff || index < RETENTION_CONFIG.maxEntries
+    );
+
+    // Re-sort back to original order (oldest first for append)
+    filtered.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+
+    // Write back only if we actually removed something
+    if (filtered.length < entries.length) {
+      const cleaned = filtered.map(e => JSON.stringify(e)).join('\n') + '\n';
+      fs.writeFileSync(_analyticsFile, cleaned, 'utf8');
+      console.error(`SkillPulse: Cleaned up ${entries.length - filtered.length} old entries`);
+    }
+  } catch (error) {
+    console.error(`Failed to cleanup old entries: ${error.message}`);
+    // Don't throw - cleanup failure shouldn't break logging
+  }
+}
+
+/**
+ * Set retention configuration
+ * @param {Object} config - { maxAgeDays: number, maxEntries: number, cleanupInterval: number }
+ */
+export function setRetentionConfig(config) {
+  if (config.maxAgeDays !== undefined) {
+    RETENTION_CONFIG.maxAgeDays = Math.max(1, config.maxAgeDays);
+  }
+  if (config.maxEntries !== undefined) {
+    RETENTION_CONFIG.maxEntries = Math.max(100, config.maxEntries);
+  }
+  if (config.cleanupInterval !== undefined) {
+    RETENTION_CONFIG.cleanupInterval = Math.max(10, config.cleanupInterval);
+  }
+}
+
+/**
+ * Get current retention configuration
+ */
+export function getRetentionConfig() {
+  return { ...RETENTION_CONFIG };
+}
+
 // Append a single entry with error handling and file locking
 export async function appendEntry(entry) {
   try {
@@ -71,6 +153,14 @@ export async function appendEntry(entry) {
       fs.appendFileSync(_analyticsFile, line, 'utf8');
     } finally {
       await release();
+    }
+
+    // Periodic cleanup (runs every N writes to avoid overhead)
+    _writeCounter++;
+    if (_writeCounter >= RETENTION_CONFIG.cleanupInterval) {
+      _writeCounter = 0;
+      // Run cleanup asynchronously without blocking
+      setImmediate(() => cleanupOldEntries());
     }
   } catch (error) {
     // Log error but don't crash the server
